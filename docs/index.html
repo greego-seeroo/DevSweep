@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevSweep — Support</title>
+<meta name="description" content="Support and help for DevSweep, the safe developer cache cleaner for macOS.">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1d1d1f;
+    --muted: #6e6e73;
+    --card: #f5f5f7;
+    --border: #e3e3e6;
+    --accent: #1a8fe3;
+    --accent2: #12b782;
+    --safe: #12b782;
+    --review: #e8952b;
+    --protected: #8e8e93;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d0d0f;
+      --fg: #f5f5f7;
+      --muted: #9a9aa0;
+      --card: #1a1a1d;
+      --border: #2a2a2e;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 22px; }
+  header {
+    text-align: center;
+    padding: 72px 22px 48px;
+    background: linear-gradient(160deg, rgba(26,143,227,0.10), rgba(18,183,130,0.10));
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    width: 92px; height: 92px; border-radius: 21px;
+    margin: 0 auto 20px;
+    background: linear-gradient(135deg, #3491f2, #12b782);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  }
+  .logo svg { width: 48px; height: 48px; fill: #fff; }
+  h1 { font-size: 2.2rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .tagline { color: var(--muted); font-size: 1.15rem; margin: 0; }
+  h2 { font-size: 1.4rem; margin: 44px 0 14px; letter-spacing: -0.01em; }
+  h3 { font-size: 1.05rem; margin: 22px 0 6px; }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin: 16px 0;
+  }
+  ul { padding-left: 20px; margin: 0 0 14px; }
+  li { margin: 5px 0; }
+  .tags { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+  .tag {
+    display: inline-flex; align-items: baseline; gap: 8px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; flex: 1 1 200px;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; align-self: center; }
+  .steps { counter-reset: step; list-style: none; padding: 0; }
+  .steps li {
+    counter-increment: step; position: relative;
+    padding: 4px 0 4px 42px; margin: 12px 0;
+  }
+  .steps li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: 2px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.9rem;
+  }
+  .faq summary {
+    cursor: pointer; font-weight: 600; padding: 14px 0;
+    border-top: 1px solid var(--border); list-style: none;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; float: right; color: var(--muted); font-weight: 400; }
+  .faq details[open] summary::after { content: "–"; }
+  .faq details:last-of-type { border-bottom: 1px solid var(--border); }
+  .contact {
+    text-align: center; background: var(--card);
+    border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px; margin: 24px 0;
+  }
+  .btn {
+    display: inline-block; margin-top: 8px;
+    background: var(--accent); color: #fff !important;
+    padding: 11px 22px; border-radius: 10px; font-weight: 600;
+  }
+  .btn:hover { text-decoration: none; opacity: 0.92; }
+  footer {
+    text-align: center; color: var(--muted);
+    font-size: 0.9rem; padding: 40px 22px 56px;
+    border-top: 1px solid var(--border); margin-top: 40px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm2 3v5h2V8H6zm10.5-1.2-.9 1.9-2 .6 2 .6.9 1.9.9-1.9 2-.6-2-.6-.9-1.9z"/></svg>
+  </div>
+  <h1>DevSweep</h1>
+  <p class="tagline">The safe way to clean developer caches on your Mac.</p>
+</header>
+
+<div class="wrap">
+
+  <h2>What DevSweep does</h2>
+  <p>
+    Every project you build leaves a trail — caches, build artifacts, downloaded
+    dependencies. Over the months they quietly swallow tens of gigabytes of disk.
+    DevSweep understands dozens of developer tools, finds the space they left
+    behind across your home folder, and lets you reclaim it — safely.
+  </p>
+
+  <h2>Getting started</h2>
+  <ol class="steps">
+    <li><strong>Grant a folder.</strong> DevSweep is sandboxed for the App Store, so it only looks where you allow. Choose your <strong>Home folder</strong> to cover every cache in one step.</li>
+    <li><strong>Review and pick.</strong> Browse what it found — size and safety are shown for every row. Tick what you want gone.</li>
+    <li><strong>Move to Trash.</strong> Reclaim the space. Nothing is truly gone until you empty the Trash yourself.</li>
+  </ol>
+
+  <h2>How it keeps your work safe</h2>
+  <p>DevSweep never deletes. Everything it clears goes to the <strong>Trash</strong>, so you can always pull it back. Each item is labelled:</p>
+  <div class="tags">
+    <span class="tag"><span class="dot" style="background:var(--safe)"></span><span><strong>Safe</strong> — rebuilds automatically; clear it freely.</span></span>
+    <span class="tag"><span class="dot" style="background:var(--review)"></span><span><strong>Review</strong> — comes back, but slowly; read before you tick.</span></span>
+    <span class="tag"><span class="dot" style="background:var(--protected)"></span><span><strong>Protected</strong> — keys, credentials, settings; never touched.</span></span>
+  </div>
+  <p>A separate safety guard independently double-checks every path before anything moves. Your SSH keys, cloud credentials, and app data are off-limits by design.</p>
+
+  <h2>Privacy</h2>
+  <div class="card">
+    <p style="margin:0">DevSweep has <strong>no network access, no telemetry, and no account</strong>. It runs entirely on your Mac and only reads the folders you explicitly grant it. Nothing about your files or usage ever leaves your computer.</p>
+  </div>
+
+  <h2>Frequently asked questions</h2>
+  <div class="faq">
+    <details>
+      <summary>The scan isn't showing my caches. What's wrong?</summary>
+      <p>Most developer caches live under your <strong>Home folder</strong> (in <code>~/Library</code> and hidden folders like <code>~/.npm</code>). If you only granted a specific subfolder, add your Home folder from the <strong>Folders</strong> menu (or the on-screen prompt) — that single grant surfaces everything.</p>
+    </details>
+    <details>
+      <summary>Is it safe? Can I lose my work?</summary>
+      <p>DevSweep only removes regenerable build output and caches, and everything goes to the Trash — never a permanent delete. Items tagged <strong>Protected</strong> (credentials, settings, the tools themselves) can never be selected. If you ever change your mind, restore from the Trash.</p>
+    </details>
+    <details>
+      <summary>What does "Review" mean on an item?</summary>
+      <p>It comes back like anything else, but slowly — a large re-download or a long rebuild. Each row explains what it costs, so you can decide before ticking it.</p>
+    </details>
+    <details>
+      <summary>Why does DevSweep ask for folder access?</summary>
+      <p>The Mac App Store requires apps to run sandboxed, which means they can only see folders you explicitly allow. Granting your Home folder lets DevSweep find your caches; you can review or remove that access any time from the Folders menu.</p>
+    </details>
+    <details>
+      <summary>Does it delete files permanently?</summary>
+      <p>No. DevSweep moves items to the Trash. They stay recoverable until you empty the Trash yourself.</p>
+    </details>
+  </div>
+
+  <div class="contact">
+    <h2 style="margin-top:0">Need help?</h2>
+    <p>Questions, bugs, or feedback — get in touch and I'll get back to you.</p>
+    <a class="btn" href="mailto:seetha.seeroo@gmail.com?subject=DevSweep%20Support">Contact Support</a>
+  </div>
+
+</div>
+
+<footer>
+  DevSweep · Developer cache cleaner for macOS<br>
+  Support: <a href="mailto:seetha.seeroo@gmail.com">seetha.seeroo@gmail.com</a>
+</footer>
+
+</body>
+</html>
