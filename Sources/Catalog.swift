@@ -796,13 +796,22 @@ enum Catalog {
     }
 
     private static func locateFlutterSDK() -> URL? {
-        let result = Shell.run("command -v flutter", timeout: 5)
-        guard result.status == 0 else { return nil }
-        let line = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !line.isEmpty else { return nil }
-        // .../flutter/bin/flutter  ->  .../flutter
-        let bin = URL(fileURLWithPath: line).resolvingSymlinksInPath()
-        return bin.deletingLastPathComponent().deletingLastPathComponent()
+        if !SandboxAccess.isSandboxed {
+            let result = Shell.run("command -v flutter", timeout: 5)
+            guard result.status == 0 else { return nil }
+            let line = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { return nil }
+            // .../flutter/bin/flutter  ->  .../flutter
+            let bin = URL(fileURLWithPath: line).resolvingSymlinksInPath()
+            return bin.deletingLastPathComponent().deletingLastPathComponent()
+        }
+        // Sandbox: no subprocess. Check where the SDK is usually cloned under $HOME.
+        for guess in ["flutter", "development/flutter", "dev/flutter", "src/flutter",
+                      "fvm/default", "sdk/flutter"] {
+            let sdk = SafetyGuard.home.appendingPathComponent(guess)
+            if exists(sdk.appendingPathComponent("bin/cache")) { return sdk }
+        }
+        return nil
     }
 
     // MARK: Go
@@ -812,17 +821,29 @@ enum Catalog {
     /// read-only, and the individual module directories cannot be moved out from
     /// under their read-only parents. The whole cache moves fine.
     private static func goRules() -> [Rule] {
-        let result = Shell.run("go env GOMODCACHE GOCACHE", timeout: 8)
-        guard result.status == 0 else { return [] }
-        let lines = result.output
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        guard lines.count >= 1 else { return [] }
+        let modCache: String
+        let buildCache: String
+
+        if !SandboxAccess.isSandboxed {
+            let result = Shell.run("go env GOMODCACHE GOCACHE", timeout: 8)
+            guard result.status == 0 else { return [] }
+            let lines = result.output
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            guard lines.count >= 1 else { return [] }
+            modCache = lines[0]
+            buildCache = lines.count >= 2 ? lines[1] : ""
+        } else {
+            // Sandbox: no subprocess. Fall back to Go's documented defaults, which
+            // hold unless the user overrode GOPATH/GOCACHE. Each is checked to exist.
+            modCache = SafetyGuard.home.appendingPathComponent("go/pkg/mod").path
+            buildCache = SafetyGuard.home.appendingPathComponent("Library/Caches/go-build").path
+        }
 
         var out: [Rule] = []
 
-        if let rel = relativeToHome(lines[0]), exists(SafetyGuard.home.appendingPathComponent(rel)) {
+        if let rel = relativeToHome(modCache), exists(SafetyGuard.home.appendingPathComponent(rel)) {
             out.append(Rule(
                 group: "Go",
                 title: "Go module cache",
@@ -832,7 +853,7 @@ enum Catalog {
             ))
         }
 
-        if lines.count >= 2, let rel = relativeToHome(lines[1]),
+        if !buildCache.isEmpty, let rel = relativeToHome(buildCache),
            exists(SafetyGuard.home.appendingPathComponent(rel)),
            !rules.contains(where: { $0.relPath == rel }) {
             out.append(Rule(

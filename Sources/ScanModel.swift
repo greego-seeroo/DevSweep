@@ -6,6 +6,9 @@ final class ScanModel: ObservableObject {
     @Published var groups: [ScanGroup] = []
     @Published var scanning = false
     @Published var status = "Ready."
+    /// Sandbox build only: true when no folder has been granted yet, so the UI
+    /// shows the "grant access" screen instead of an empty result.
+    @Published var needsAccess = false
     @Published var selected: Set<String> = []      // keyed by absolute path
     @Published var lastReport: Scanner.DeleteReport?
     @Published var toolsMessage: String?
@@ -25,9 +28,40 @@ final class ScanModel: ObservableObject {
     private let excludedKey = "excludedFolders"
 
     init() {
+        // Re-open any folders the user granted in a previous session. No-op outside
+        // the sandbox, where the whole home directory is reachable already.
+        SandboxAccess.loadGrants()
+        needsAccess = !SandboxAccess.hasAccess
+
         let paths = UserDefaults.standard.stringArray(forKey: excludedKey) ?? []
         excluded = paths.map { URL(fileURLWithPath: $0) }
             .filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    // MARK: - Sandbox folder grants
+
+    /// Folders the user has granted access to (sandbox build only).
+    var grantedRoots: [URL] { SandboxAccess.roots }
+
+    #if canImport(AppKit)
+    /// Asks the user to grant a folder, then rescans if they did.
+    func requestAccess() {
+        if SandboxAccess.requestAccess() != nil { rescan() }
+    }
+    #endif
+
+    /// Revokes a granted folder and refreshes — or returns to the grant screen if
+    /// that was the last one.
+    func removeGrant(_ url: URL) {
+        SandboxAccess.removeGrant(url)
+        if SandboxAccess.hasAccess {
+            rescan()
+        } else {
+            groups = []
+            selected.removeAll()
+            needsAccess = true
+            status = "Grant DevSweep a folder to scan."
+        }
     }
 
     // MARK: - Derived
@@ -94,10 +128,21 @@ final class ScanModel: ObservableObject {
 
     func rescan() {
         guard !scanning else { return }
+
+        // Sandbox build: nothing is reachable until the user grants a folder.
+        guard SandboxAccess.hasAccess else {
+            needsAccess = true
+            status = "Grant DevSweep a folder to scan."
+            return
+        }
+        needsAccess = false
+
         scanning = true
         status = "Measuring caches…"
         lastReport = nil
         let skip = Set(excluded.map(\.standardizedFileURL.path))
+        // Outside the sandbox the whole home is walked; inside, only granted roots.
+        let projectRoots = SandboxAccess.isSandboxed ? SandboxAccess.roots : [SafetyGuard.home]
 
         Task.detached(priority: .userInitiated) {
             var result = Scanner.scanCatalog()
@@ -110,7 +155,7 @@ final class ScanModel: ObservableObject {
                 self.status = "Scanning your projects…"
             }
 
-            if let projects = Scanner.scanProjects(roots: [SafetyGuard.home], excluding: skip) {
+            if let projects = Scanner.scanProjects(roots: projectRoots, excluding: skip) {
                 result.append(projects)
             }
 
@@ -124,7 +169,8 @@ final class ScanModel: ObservableObject {
             }
 
             // Probing Docker and Homebrew means running their CLIs, which is slow
-            // and can hang. Do it after the list is already on screen.
+            // and can hang — and is blocked entirely under the sandbox. Skip it there.
+            guard !SandboxAccess.isSandboxed else { return }
             let tools = Scanner.availablePruneTools()
             await MainActor.run { self.pruneTools = tools }
         }

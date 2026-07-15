@@ -39,13 +39,22 @@ if [[ -z "${SIGN_ID:-}" ]]; then
     | grep -m1 -o '"Apple Development: [^"]*"' | tr -d '"' || true)"
 fi
 
+# The App Store build runs sandboxed. Embedding the entitlements here means a
+# local ./build.sh produces the same sandboxed app the archive will, so folder
+# grants and their limits can be tested without going through Xcode.
+ENT_ARGS=()
+if [[ -f DevSweep.entitlements ]]; then
+  echo "› entitlements (DevSweep.entitlements — App Sandbox)"
+  ENT_ARGS=(--entitlements DevSweep.entitlements)
+fi
+
 if [[ -n "$SIGN_ID" ]]; then
   echo "› signing ($SIGN_ID)"
-  codesign --force --options runtime --timestamp=none --sign "$SIGN_ID" "$APP"
+  codesign --force --options runtime --timestamp=none "${ENT_ARGS[@]}" --sign "$SIGN_ID" "$APP"
 else
   echo "› signing (ad-hoc — no Apple Development identity found)"
   echo "  macOS will re-ask for folder access after every rebuild."
-  codesign --force --sign - --timestamp=none "$APP"
+  codesign --force --timestamp=none "${ENT_ARGS[@]}" --sign - "$APP"
 fi
 
 echo

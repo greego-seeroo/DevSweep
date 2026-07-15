@@ -196,12 +196,22 @@ enum Scanner {
 
     // MARK: - Sizing
 
-    /// Sizes many directories at once. `du` is far faster than walking the tree
-    /// through FileManager, and `-x` keeps it from wandering onto other volumes.
-    /// The work is spread over several `du` processes because a single one spends
-    /// most of its life waiting on the filesystem.
+    /// Sizes many directories at once. Under the sandbox the app cannot launch
+    /// `du` (or any helper), so sizing walks the tree in-process with FileManager.
+    /// Outside the sandbox `du -x` is kept: it is faster and stays on one volume.
     static func sizes(of urls: [URL]) -> [String: Int64] {
         guard !urls.isEmpty else { return [:] }
+
+        if SandboxAccess.isSandboxed {
+            var result: [String: Int64] = [:]
+            let lock = NSLock()
+            DispatchQueue.concurrentPerform(iterations: urls.count) { i in
+                let url = urls[i]
+                let bytes = walkSize(url)
+                lock.lock(); result[url.path] = bytes; lock.unlock()
+            }
+            return result
+        }
 
         // Enough workers to keep the cores busy, but never one process per path.
         // Paths are dealt round-robin rather than sliced, so a run of very large
@@ -221,6 +231,47 @@ enum Scanner {
             lock.unlock()
         }
         return result
+    }
+
+    /// On-disk size of a file or directory, measured the way `du` does: allocated
+    /// blocks, summed over regular files, not following symlinks or crossing into
+    /// other volumes. Used only in the sandbox, where subprocesses are blocked.
+    private static func walkSize(_ url: URL) -> Int64 {
+        let fm = FileManager.default
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey, .isDirectoryKey,
+            .totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .fileSizeKey,
+        ]
+
+        func fileBytes(_ v: URLResourceValues) -> Int64 {
+            Int64(v.totalFileAllocatedSize ?? v.fileAllocatedSize ?? v.fileSize ?? 0)
+        }
+
+        guard let values = try? url.resourceValues(forKeys: keys) else { return 0 }
+        if values.isDirectory != true { return fileBytes(values) }
+
+        var total: Int64 = 0
+        guard let walker = fm.enumerator(
+            at: url,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsPackageDescendants],
+            errorHandler: { _, _ in true }   // an unreadable subfolder just adds nothing
+        ) else { return 0 }
+
+        // Staying on one volume mirrors `du -x`: without it, a symlinked-in mount
+        // could balloon a cache's reported size. Enumerator already skips symlinks.
+        let rootVolume = try? url.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier
+        for case let entry as URL in walker {
+            guard let v = try? entry.resourceValues(forKeys: keys) else { continue }
+            if let rootVolume,
+               let vol = try? entry.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier,
+               !vol.isEqual(rootVolume) {
+                walker.skipDescendants()
+                continue
+            }
+            if v.isRegularFile == true { total += fileBytes(v) }
+        }
+        return total
     }
 
     private static func du(_ urls: [URL]) -> [String: Int64] {

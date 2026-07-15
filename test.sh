@@ -10,7 +10,7 @@ swiftc \
   -swift-version 5 \
   -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
   -target "$(uname -m)-apple-macos14.0" \
-  Sources/Models.swift Sources/Catalog.swift Sources/Scanner.swift \
+  Sources/Sandbox.swift Sources/Models.swift Sources/Catalog.swift Sources/Scanner.swift \
   Tests/main.swift \
   -o "$BIN"
 

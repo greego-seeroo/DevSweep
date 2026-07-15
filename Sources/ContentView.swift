@@ -221,7 +221,9 @@ struct ContentView: View {
 
         // The first scan has nothing to show yet. Without this the empty `groups`
         // would fall through to NoMatches and claim nothing matches an empty search.
-        if model.groups.isEmpty && model.scanning {
+        if model.needsAccess && model.groups.isEmpty && !model.scanning {
+            GrantAccess { model.requestAccess() }
+        } else if model.groups.isEmpty && model.scanning {
             Scanning(status: model.status)
         } else if model.groups.isEmpty {
             ContentUnavailableViewCompat()
@@ -791,6 +793,41 @@ private struct Scanning: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.default, value: status)
+    }
+}
+
+/// Shown in the App Store (sandboxed) build before any folder has been granted.
+/// A sandboxed app can only read what the user explicitly hands over, so the very
+/// first thing DevSweep needs is permission to look at a folder.
+private struct GrantAccess: View {
+    let grant: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "folder.badge.questionmark")
+                .font(.system(size: 44))
+                .foregroundStyle(.tint)
+            Text("Grant a folder to scan")
+                .font(.title3.weight(.semibold))
+            Text("DevSweep only looks where you let it. Choose your **Home folder** to cover every cache, or a single project or cache directory to keep it narrow. You can add or remove folders any time.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+            Button(action: grant) {
+                Label("Choose Folder…", systemImage: "folder")
+                    .padding(.horizontal, 6)
+            }
+            .controlSize(.large)
+            .buttonStyle(.borderedProminent)
+            .padding(.top, 2)
+            Text("Nothing is read or deleted until you pick a folder.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
