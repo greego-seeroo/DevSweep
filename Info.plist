@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>DevSweep</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.devsweep</string>
+	<string>com.greego.devesweep</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
@@ -26,5 +26,18 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Local build. No network access, no telemetry.</string>
+
+	<!-- Shown in the system's permission prompts. Without these the prompt gives no
+	     reason at all, which is exactly when people click Don't Allow. DevSweep only
+	     reads these folders to find build output next to a project marker; it never
+	     opens your files, and anything it removes goes to the Trash. -->
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>DevSweep looks for regenerable build output (node_modules, target, build…) in projects you keep on your Desktop. It reads folder names and sizes only, and never opens your files.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>DevSweep looks for regenerable build output (node_modules, target, build…) in projects you keep in Documents. It reads folder names and sizes only, and never opens your files.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>DevSweep looks for regenerable build output (node_modules, target, build…) in projects you keep in Downloads. It reads folder names and sizes only, and never opens your files.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>DevSweep only needs this if you keep projects on an external drive. It reads folder names and sizes only.</string>
 </dict>
 </plist>
