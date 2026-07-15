@@ -97,11 +97,12 @@ extension Array where Element == ScanGroup {
 /// or the project scanner produced a bad path, nothing outside these bounds moves.
 enum SafetyGuard {
     /// The home directory every rule and the safety boundary are measured against.
-    /// Outside the sandbox this is the real home. Inside it, `homeDirectoryForCurrentUser`
-    /// points at the empty app container, so we use the folder the user granted
-    /// (which resolves to their real home) — see `SandboxAccess`.
+    /// Always the *real* home (`/Users/name`) — even under the sandbox, where
+    /// `homeDirectoryForCurrentUser` returns the empty app container. Access to it
+    /// comes from whichever granted folder covers it (which may be an ancestor like
+    /// `/Users`), but the base path is always the real home — see `SandboxAccess`.
     static var home: URL {
-        SandboxAccess.homeRoot ?? SandboxAccess.realHome
+        SandboxAccess.realHome
     }
 
     /// Directories that may never be deleted themselves. Their children still can be.
