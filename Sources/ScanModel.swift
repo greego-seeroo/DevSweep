@@ -140,15 +140,53 @@ final class ScanModel: ObservableObject {
 
         Task.detached(priority: .userInitiated) {
             let report = Scanner.trash(items)
+            // Re-read the numbers the deletion changed. Everything else is known:
+            // the rows that moved are simply removed, no full rescan needed.
+            let space = DiskSpace.current()
+            let trash = Scanner.trashSize()
             await MainActor.run {
                 self.lastReport = report
-                self.selected.removeAll()
+                self.remove(paths: Set(report.movedURLs.map(\.path)))
+                self.disk = space
+                self.trashBytes = trash
                 self.scanning = false
                 self.status = "Moved \(report.moved) item\(report.moved == 1 ? "" : "s") to the Trash."
-                self.rescan()
             }
         }
     }
+
+    /// Drops rows from the list and clears any selection that pointed at them.
+    private func remove(paths: Set<String>) {
+        guard !paths.isEmpty else { return }
+        groups = groups.removing(paths: paths)
+        let stillValid = Set(groups.flatMap(\.items).flatMap(\.deletableLeaves).map(\.id))
+        selected.formIntersection(stillValid)
+    }
+
+    /// Cheap catch-up when the user comes back from Finder or a terminal: rows
+    /// whose directories no longer exist disappear, and the disk and Trash
+    /// numbers are re-read. A stat per row, not a rescan — safe to run on every
+    /// app activation, which is exactly when external deletions become visible.
+    func refreshExternalChanges() {
+        guard !scanning, !refreshing, !groups.isEmpty else { return }
+        refreshing = true
+        let candidates = groups.flatMap(\.items).flatMap { [$0] + $0.children }.map(\.url.path)
+
+        Task.detached(priority: .utility) {
+            let fm = FileManager.default
+            let gone = Set(candidates.filter { !fm.fileExists(atPath: $0) })
+            let space = DiskSpace.current()
+            let trash = Scanner.trashSize()
+            await MainActor.run {
+                self.remove(paths: gone)
+                self.disk = space
+                self.trashBytes = trash
+                self.refreshing = false
+            }
+        }
+    }
+
+    private var refreshing = false
 
     func exclude(_ url: URL) {
         let std = url.standardizedFileURL

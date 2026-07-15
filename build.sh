@@ -28,8 +28,25 @@ swiftc \
 echo "› icon"
 swift Tools/makeicon.swift "$RES/AppIcon.icns" >/dev/null 2>&1 || echo "  (skipped)"
 
-echo "› signing (ad-hoc)"
-codesign --force --sign - --timestamp=none "$APP"
+# macOS keys a privacy grant to the app's code signature. An ad-hoc signature gets
+# a fresh hash on every compile, so the system sees a brand new app each build and
+# asks for Desktop/Documents/Downloads again. Signing with a real identity keeps the
+# grant across rebuilds — approve the folders once and you are done.
+#
+# Override with:  SIGN_ID="Apple Development: you (TEAMID)" ./build.sh
+if [[ -z "${SIGN_ID:-}" ]]; then
+  SIGN_ID="$(security find-identity -v -p codesigning \
+    | grep -m1 -o '"Apple Development: [^"]*"' | tr -d '"' || true)"
+fi
+
+if [[ -n "$SIGN_ID" ]]; then
+  echo "› signing ($SIGN_ID)"
+  codesign --force --options runtime --timestamp=none --sign "$SIGN_ID" "$APP"
+else
+  echo "› signing (ad-hoc — no Apple Development identity found)"
+  echo "  macOS will re-ask for folder access after every rebuild."
+  codesign --force --sign - --timestamp=none "$APP"
+fi
 
 echo
 echo "Built $(pwd)/$APP"

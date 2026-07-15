@@ -68,6 +68,28 @@ struct ScanGroup: Identifiable {
     var totalBytes: Int64 { items.reduce(0) { $0 + $1.totalBytes } }
 }
 
+extension Array where Element == ScanGroup {
+    /// The same groups with every row at one of `paths` removed. Used when rows
+    /// stop existing — trashed by us, or deleted behind our back — so the list
+    /// reflects reality immediately instead of after a full rescan.
+    ///
+    /// Mirrors `scanCatalog`'s rule for empties: a row that ends up at zero bytes
+    /// disappears unless it is Protected, which is shown regardless of size.
+    func removing(paths: Set<String>) -> [ScanGroup] {
+        guard !paths.isEmpty else { return self }
+        return compactMap { group in
+            let items = group.items.compactMap { item -> ScanItem? in
+                guard !paths.contains(item.id) else { return nil }
+                var item = item
+                item.children.removeAll { paths.contains($0.id) }
+                if item.totalBytes == 0 && item.tag != .never { return nil }
+                return item
+            }
+            return items.isEmpty ? nil : ScanGroup(name: group.name, items: items)
+        }
+    }
+}
+
 // MARK: - The guard rail
 
 /// Every path that DevSweep is ever asked to delete passes through here first.

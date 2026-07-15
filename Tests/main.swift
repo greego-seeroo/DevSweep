@@ -146,6 +146,9 @@ fixture("repos/notes/Assets/x.txt", bytes: 100)
 fixture("repos/notes/Library/important.txt", bytes: 600_000)        // not Unity: no ProjectSettings
 fixture("repos/scripts/bin/deploy.sh", bytes: 300_000)              // bin of shell scripts
 fixture("repos/writing/target/audience.md", bytes: 250_000)         // target of prose
+fixture("repos/js-app/package.json", bytes: 100)
+fixture("repos/js-app/deps/vendored.js", bytes: 200_000)            // deps is Elixir-only evidence
+fixture("repos/notes-tf/.terraform/x", bytes: 150_000)              // .terraform with no *.tf beside it
 
 // A symlinked artifact must be skipped — trashing a symlink's destination
 // through the link would reach whatever it points at.
@@ -165,7 +168,8 @@ for expected in ["rust-app/target", "web-app/node_modules", "web-app/dist",
     check(found.contains(expected), "detected \(expected)")
 }
 for trap in ["plain-repo/build", "docs-site/dist", "notes/Library",
-             "scripts/bin", "writing/target", "linked-app/node_modules"] {
+             "scripts/bin", "writing/target", "linked-app/node_modules",
+             "js-app/deps", "notes-tf/.terraform"] {
     check(!found.contains(trap), "left alone: \(trap)")
 }
 check(!found.contains("web-app/node_modules/left-pad"), "never descends into what it offers")
@@ -219,6 +223,42 @@ check(SizeText.sizes(in: "2345.67 MiB would be freed").max() == Int64(2345.67 * 
 check(SizeText.sizes(in: "sha256:abc123def").isEmpty, "hex digests are not sizes")
 check(SizeText.sizes(in: "1.5 games installed").isEmpty, "'games' is not gigabytes")
 check(SizeText.sizes(in: "Deleted 12 images").isEmpty, "bare counts are not sizes")
+check(SizeText.sizes(in: "freeing 500 kb").max() == 500_000, "lowercase unit with a space reads correctly")
+check(SizeText.sizes(in: "cache: 10TiB total").max() == 10 * 1_099_511_627_776, "terabyte-scale binary units read correctly")
+check(SizeText.sizes(in: "v1.2.3 released").isEmpty, "version numbers are not sizes")
+
+// MARK: - 5b. In-place removal: what the list does when rows stop existing
+
+section("Row removal without a rescan")
+
+let sampleGroups: [ScanGroup] = [
+    ScanGroup(name: "Xcode", items: [
+        ScanItem(title: "box", note: "", url: h("Library/Developer/Xcode/DerivedData"), tag: .safe, bytes: 0,
+                 children: [
+                    ScanItem(title: "a", note: "", url: h("Library/Developer/Xcode/DerivedData/a"), tag: .safe, bytes: 10),
+                    ScanItem(title: "b", note: "", url: h("Library/Developer/Xcode/DerivedData/b"), tag: .safe, bytes: 20),
+                 ]),
+        ScanItem(title: "sdk", note: "", url: h("Library/Android/sdk"), tag: .never, bytes: 0),
+    ]),
+    ScanGroup(name: "Go", items: [
+        ScanItem(title: "mod", note: "", url: h("go/pkg/mod"), tag: .safe, bytes: 5),
+    ]),
+]
+
+let afterLeaf = sampleGroups.removing(paths: [h("Library/Developer/Xcode/DerivedData/a").path])
+check(afterLeaf[0].items[0].children.map(\.title) == ["b"], "removing one child keeps its siblings")
+check(afterLeaf[0].items[0].totalBytes == 20, "the container's total shrinks with the child")
+
+let afterAll = sampleGroups.removing(paths: [h("Library/Developer/Xcode/DerivedData/a").path,
+                                             h("Library/Developer/Xcode/DerivedData/b").path])
+check(!afterAll[0].items.contains { $0.title == "box" }, "a container emptied of children disappears")
+check(afterAll[0].items.contains { $0.title == "sdk" }, "a Protected row stays even at zero bytes")
+
+let afterGroup = sampleGroups.removing(paths: [h("go/pkg/mod").path])
+check(!afterGroup.contains { $0.name == "Go" }, "a group emptied of items disappears")
+check(afterGroup.contains { $0.name == "Xcode" }, "other groups are untouched")
+
+check(sampleGroups.removing(paths: []).count == sampleGroups.count, "removing nothing changes nothing")
 
 // MARK: - 6. The trash flow itself, end to end
 
@@ -234,6 +274,7 @@ fm.createFile(atPath: victim.appendingPathComponent("junk.bin").path,
 let okReport = Scanner.trash([ScanItem(title: "victim", note: "", url: victim, tag: .safe, bytes: 32_768)])
 check(okReport.moved == 1 && okReport.failures.isEmpty, "deletable item moves to the Trash")
 check(!fm.fileExists(atPath: victim.path), "item is gone from its origin")
+check(okReport.movedURLs == [victim], "the report records what moved, at its original path")
 // Best-effort tidy-up of our fixture from the Trash; the name is unique to this run.
 try? fm.removeItem(at: h(".Trash/\(victimName)"))
 

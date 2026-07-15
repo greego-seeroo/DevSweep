@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var search = ""
     @State private var confirming = false
     @State private var pendingPrune: PruneTool?
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,6 +22,12 @@ struct ContentView: View {
         }
         .frame(minWidth: 1060, minHeight: 620)
         .onAppear { if model.groups.isEmpty { model.rescan() } }
+        // Coming back from Finder or a terminal is the moment external deletions
+        // become visible — catch up without making the user rescan.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.refreshExternalChanges()
+        }
         .onChange(of: model.groups.map(\.name)) { _, names in autoCollapse(names) }
         .sheet(isPresented: $confirming) { ConfirmSheet(isPresented: $confirming) }
         .alert("Cleanup finished",
@@ -98,8 +105,15 @@ struct ContentView: View {
                 Text(model.status).font(.caption).foregroundStyle(.secondary)
             }
 
-            SearchField(text: $search)
+            SearchField(text: $search, focused: $searchFocused)
                 .frame(width: 170)
+                // An invisible button is the standard way to route a shortcut to
+                // a focus change; TextField cannot carry one itself.
+                .background(
+                    Button("") { searchFocused = true }
+                        .keyboardShortcut("f", modifiers: .command)
+                        .opacity(0)
+                )
 
             Picker("", selection: $filter) {
                 Text("All").tag(SafetyTag?.none)
@@ -202,13 +216,17 @@ struct ContentView: View {
     @ViewBuilder
     private var content: some View {
         if let report = model.lastReport, report.moved > 0 || !report.failures.isEmpty {
-            ReportBanner(report: report)
+            ReportBanner(report: report) { model.lastReport = nil }
         }
 
-        if model.groups.isEmpty && !model.scanning {
+        // The first scan has nothing to show yet. Without this the empty `groups`
+        // would fall through to NoMatches and claim nothing matches an empty search.
+        if model.groups.isEmpty && model.scanning {
+            Scanning(status: model.status)
+        } else if model.groups.isEmpty {
             ContentUnavailableViewCompat()
         } else if visibleGroups.isEmpty {
-            NoMatches(query: search)
+            NoMatches(query: search, filter: filter)
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
@@ -400,6 +418,7 @@ private struct DiskGauge: View {
 
 private struct SearchField: View {
     @Binding var text: String
+    var focused: FocusState<Bool>.Binding
 
     var body: some View {
         HStack(spacing: 5) {
@@ -409,6 +428,11 @@ private struct SearchField: View {
             TextField("Search", text: $text)
                 .textFieldStyle(.plain)
                 .font(.callout)
+                .focused(focused)
+                .onExitCommand {          // Escape: clear, then step out
+                    text = ""
+                    focused.wrappedValue = false
+                }
             if !text.isEmpty {
                 Button {
                     text = ""
@@ -463,18 +487,31 @@ private struct GroupHeader: View {
     }
 }
 
+/// Empty state for the two ways of narrowing the list. With no search text the
+/// culprit is the tag filter, and “Nothing matches ‘’” would just look broken.
 private struct NoMatches: View {
     let query: String
+    let filter: SafetyTag?
+
+    private var searching: Bool {
+        !query.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var body: some View {
         VStack(spacing: 8) {
             Spacer()
-            Image(systemName: "magnifyingglass")
+            Image(systemName: searching ? "magnifyingglass" : "line.3.horizontal.decrease.circle")
                 .font(.system(size: 30))
                 .foregroundStyle(.tertiary)
-            Text("Nothing matches “\(query)”.").font(.headline)
-            Text("Try a tool name, a path, or clear the tag filter.")
-                .font(.caption).foregroundStyle(.secondary)
+            if searching {
+                Text("Nothing matches “\(query)”.").font(.headline)
+                Text("Try a tool name, a path, or clear the tag filter.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("Nothing here is tagged \(filter?.label ?? "that").").font(.headline)
+                Text("Pick another tag, or All to see everything found.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -696,6 +733,7 @@ private struct TagExplainer: View {
 
 private struct ReportBanner: View {
     let report: Scanner.DeleteReport
+    let dismiss: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -716,10 +754,43 @@ private struct ReportBanner: View {
                     FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"))
             }
             .buttonStyle(.link)
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
         .background(Color.green.opacity(0.07))
+    }
+}
+
+/// Shown while the very first scan is running, when there is not yet a single row
+/// to put on screen. Later scans keep the previous list visible and rely on the
+/// small spinner in the header instead.
+private struct Scanning: View {
+    let status: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Spacer()
+            ProgressView()
+                .progressViewStyle(.circular)
+                .controlSize(.large)
+            Text(status)
+                .font(.headline)
+                .contentTransition(.opacity)
+            Text("Measuring your caches and walking your projects. This usually takes a few seconds.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.default, value: status)
     }
 }
 

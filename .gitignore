@@ -1,3 +1,7 @@
 DevSweep.app/
 DevSweep.dmg
 .DS_Store
+.claude/
+build/
+DevSweep.xcodeproj/xcuserdata/
+DevSweep.xcodeproj/project.xcworkspace/xcuserdata/

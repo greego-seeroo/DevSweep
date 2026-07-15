@@ -439,6 +439,9 @@ enum Scanner {
     struct DeleteReport {
         var freed: Int64 = 0
         var moved: Int = 0
+        /// The original locations of everything that went to the Trash, so the
+        /// model can drop exactly those rows without re-scanning the world.
+        var movedURLs: [URL] = []
         var failures: [(url: URL, reason: String)] = []
     }
 
@@ -459,6 +462,7 @@ enum Scanner {
                 try fm.trashItem(at: item.url, resultingItemURL: nil)
                 report.freed += item.bytes
                 report.moved += 1
+                report.movedURLs.append(item.url)
             } catch {
                 report.failures.append((item.url, error.localizedDescription))
             }
