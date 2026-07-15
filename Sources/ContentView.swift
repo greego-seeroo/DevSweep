@@ -271,6 +271,12 @@ struct ContentView: View {
             ReportBanner(report: report) { model.lastReport = nil }
         }
 
+        // Only subfolders granted: results are partial. Nudge toward the home
+        // folder, which is the one grant that surfaces every developer cache.
+        if model.isSandboxed && !model.homeGranted && !model.groups.isEmpty {
+            HomeGrantBanner { model.requestAccess(preferHome: true) }
+        }
+
         // The first scan has nothing to show yet. Without this the empty `groups`
         // would fall through to NoMatches and claim nothing matches an empty search.
         if model.needsAccess && model.groups.isEmpty && !model.scanning {
@@ -831,6 +837,36 @@ private struct ReportBanner: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
         .background(Color.green.opacity(0.07))
+    }
+}
+
+/// A standing recommendation shown when only specific folders were granted. The
+/// results on screen are real but partial — most developer caches live under the
+/// home folder, so adding it is the single step that surfaces everything.
+private struct HomeGrantBanner: View {
+    let addHome: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lightbulb.fill")
+                .foregroundStyle(.yellow)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Add your Home folder for a complete scan")
+                    .font(.callout.weight(.semibold))
+                Text("You've granted specific folders, so this list is partial. Most caches — Xcode, npm, Gradle, and the rest — live under your Home folder.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(action: addHome) {
+                Label("Add Home Folder", systemImage: "folder.badge.plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(Color.accentColor.opacity(0.08))
     }
 }
 
