@@ -12,6 +12,10 @@ struct ContentView: View {
     @State private var pendingPrune: PruneTool?
     @FocusState private var searchFocused: Bool
 
+    /// Shown once, ever. Bumping the suffix would re-show it after a redesign.
+    @AppStorage("devsweep.welcomeSeen.v1") private var welcomeSeen = false
+    @State private var showWelcome = false
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -21,7 +25,22 @@ struct ContentView: View {
             footer
         }
         .frame(minWidth: 1060, minHeight: 620)
-        .onAppear { if model.groups.isEmpty { model.rescan() } }
+        .onAppear {
+            if !welcomeSeen { showWelcome = true }
+            if model.groups.isEmpty { model.rescan() }
+        }
+        .sheet(isPresented: $showWelcome) {
+            WelcomeView(sandboxed: model.isSandboxed) {
+                welcomeSeen = true
+                showWelcome = false
+                // Hand off straight into granting a folder on the sandbox build,
+                // so the story flows into the first useful action.
+                if model.isSandboxed && model.needsAccess {
+                    model.requestAccess(preferHome: true)
+                }
+            }
+            .interactiveDismissDisabled()
+        }
         // Coming back from Finder or a terminal is the moment external deletions
         // become visible — catch up without making the user rescan.
         .onReceive(NotificationCenter.default.publisher(
