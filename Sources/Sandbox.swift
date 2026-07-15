@@ -48,8 +48,11 @@ enum SandboxAccess {
             ?? roots.first { home.hasPrefix($0.standardizedFileURL.path + "/") }
     }
 
-    /// Whether there is enough access to run a scan. Outside the sandbox: always.
-    static var hasAccess: Bool { !isSandboxed || homeRoot != nil }
+    /// Whether there is anything to scan at all. Any granted folder counts — the
+    /// project walker runs over whatever roots exist. The cache catalog needs the
+    /// home folder specifically (see `homeRoot`), but a subfolder grant still gives
+    /// a useful project-artifact scan.
+    static var hasAccess: Bool { !isSandboxed || !roots.isEmpty }
 
     // MARK: Persistence
 

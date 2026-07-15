@@ -43,6 +43,13 @@ final class ScanModel: ObservableObject {
     /// Folders the user has granted access to (sandbox build only).
     var grantedRoots: [URL] { SandboxAccess.roots }
 
+    /// True in the App Store (sandboxed) build. Drives the folder-grant UI.
+    var isSandboxed: Bool { SandboxAccess.isSandboxed }
+
+    /// Whether the home folder itself is granted — the cache catalog needs it.
+    /// When false, only project artifacts inside granted subfolders are found.
+    var homeGranted: Bool { SandboxAccess.homeRoot != nil }
+
     #if canImport(AppKit)
     /// Asks the user to grant a folder, then rescans if they did.
     func requestAccess() {
@@ -143,9 +150,12 @@ final class ScanModel: ObservableObject {
         let skip = Set(excluded.map(\.standardizedFileURL.path))
         // Outside the sandbox the whole home is walked; inside, only granted roots.
         let projectRoots = SandboxAccess.isSandboxed ? SandboxAccess.roots : [SafetyGuard.home]
+        // The cache catalog is home-relative, so it can only run when the home
+        // folder itself was granted. A subfolder grant still gets a project scan.
+        let runCatalog = !SandboxAccess.isSandboxed || SandboxAccess.homeRoot != nil
 
         Task.detached(priority: .userInitiated) {
-            var result = Scanner.scanCatalog()
+            var result = runCatalog ? Scanner.scanCatalog() : []
 
             let space = DiskSpace.current()
             let trash = Scanner.trashSize()

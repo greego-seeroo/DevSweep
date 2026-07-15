@@ -105,6 +105,39 @@ struct ContentView: View {
                 Text(model.status).font(.caption).foregroundStyle(.secondary)
             }
 
+            // Sandbox build: let the user see and manage the folders they granted.
+            if model.isSandboxed {
+                Menu {
+                    if model.grantedRoots.isEmpty {
+                        Text("No folders granted yet")
+                    } else {
+                        Section("Folders DevSweep can scan") {
+                            ForEach(model.grantedRoots, id: \.path) { folder in
+                                Menu(short(folder)) {
+                                    Button("Reveal in Finder") {
+                                        NSWorkspace.shared.activateFileViewerSelecting([folder])
+                                    }
+                                    Button("Remove", role: .destructive) {
+                                        model.removeGrant(folder)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !model.homeGranted {
+                        Divider()
+                        Text("Add your Home folder to find caches")
+                            .font(.caption)
+                    }
+                    Divider()
+                    Button("Add Folder…") { model.requestAccess() }
+                } label: {
+                    Label("Folders", systemImage: "folder")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+
             SearchField(text: $search, focused: $searchFocused)
                 .frame(width: 170)
                 // An invisible button is the standard way to route a shortcut to
@@ -222,9 +255,13 @@ struct ContentView: View {
         // The first scan has nothing to show yet. Without this the empty `groups`
         // would fall through to NoMatches and claim nothing matches an empty search.
         if model.needsAccess && model.groups.isEmpty && !model.scanning {
-            GrantAccess { model.requestAccess() }
+            GrantAccess(followup: false) { model.requestAccess() }
         } else if model.groups.isEmpty && model.scanning {
             Scanning(status: model.status)
+        } else if model.groups.isEmpty && model.isSandboxed && !model.homeGranted {
+            // Something was granted, but no caches were found because the home
+            // folder — where the caches live — is not among the granted folders.
+            GrantAccess(followup: true) { model.requestAccess() }
         } else if model.groups.isEmpty {
             ContentUnavailableViewCompat()
         } else if visibleGroups.isEmpty {
@@ -342,6 +379,14 @@ struct ContentView: View {
         if panel.runModal() == .OK, let url = panel.url {
             model.exclude(url)
         }
+    }
+
+    /// A granted folder's path, shortened with ~ for display in menus.
+    private func short(_ url: URL) -> String {
+        let home = SandboxAccess.realHome.path
+        let path = url.standardizedFileURL.path
+        if path == home { return "Home folder (~)" }
+        return path.replacingOccurrences(of: home + "/", with: "~/")
     }
 }
 
@@ -800,23 +845,28 @@ private struct Scanning: View {
 /// A sandboxed app can only read what the user explicitly hands over, so the very
 /// first thing DevSweep needs is permission to look at a folder.
 private struct GrantAccess: View {
+    /// false: the first-run screen, nothing granted yet.
+    /// true: folders were granted but held no caches — nudge toward the home folder.
+    let followup: Bool
     let grant: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
             Spacer()
-            Image(systemName: "folder.badge.questionmark")
+            Image(systemName: followup ? "folder.badge.plus" : "folder.badge.questionmark")
                 .font(.system(size: 44))
                 .foregroundStyle(.tint)
-            Text("Grant a folder to scan")
+            Text(followup ? "No caches in the folders you added" : "Grant a folder to scan")
                 .font(.title3.weight(.semibold))
-            Text("DevSweep only looks where you let it. Choose your **Home folder** to cover every cache, or a single project or cache directory to keep it narrow. You can add or remove folders any time.")
+            Text(followup
+                 ? "Developer caches live under your **Home folder** (Xcode, npm, Gradle, and the rest). Add it to let DevSweep find them — you can still remove it later."
+                 : "DevSweep only looks where you let it. Choose your **Home folder** to cover every cache, or a single project or cache directory to keep it narrow. You can add or remove folders any time.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
+                .frame(maxWidth: 440)
             Button(action: grant) {
-                Label("Choose Folder…", systemImage: "folder")
+                Label(followup ? "Add Home Folder…" : "Choose Folder…", systemImage: "folder")
                     .padding(.horizontal, 6)
             }
             .controlSize(.large)
