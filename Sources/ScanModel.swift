@@ -51,9 +51,10 @@ final class ScanModel: ObservableObject {
     var homeGranted: Bool { SandboxAccess.homeRoot != nil }
 
     #if canImport(AppKit)
-    /// Asks the user to grant a folder, then rescans if they did.
-    func requestAccess() {
-        if SandboxAccess.requestAccess() != nil { rescan() }
+    /// Asks the user to grant a folder, then rescans if they did. `preferHome`
+    /// opens the picker so the whole home folder is easy to select in one click.
+    func requestAccess(preferHome: Bool = false) {
+        if SandboxAccess.requestAccess(preferHome: preferHome) != nil { rescan() }
     }
     #endif
 

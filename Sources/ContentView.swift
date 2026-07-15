@@ -124,13 +124,13 @@ struct ContentView: View {
                             }
                         }
                     }
-                    if !model.homeGranted {
-                        Divider()
-                        Text("Add your Home folder to find caches")
-                            .font(.caption)
-                    }
                     Divider()
-                    Button("Add Folder…") { model.requestAccess() }
+                    if !model.homeGranted {
+                        Button("Add Home Folder (finds all caches)…") {
+                            model.requestAccess(preferHome: true)
+                        }
+                    }
+                    Button("Add Another Folder…") { model.requestAccess() }
                 } label: {
                     Label("Folders", systemImage: "folder")
                 }
@@ -255,13 +255,13 @@ struct ContentView: View {
         // The first scan has nothing to show yet. Without this the empty `groups`
         // would fall through to NoMatches and claim nothing matches an empty search.
         if model.needsAccess && model.groups.isEmpty && !model.scanning {
-            GrantAccess(followup: false) { model.requestAccess() }
+            GrantAccess(followup: false) { model.requestAccess(preferHome: true) }
         } else if model.groups.isEmpty && model.scanning {
             Scanning(status: model.status)
         } else if model.groups.isEmpty && model.isSandboxed && !model.homeGranted {
             // Something was granted, but no caches were found because the home
             // folder — where the caches live — is not among the granted folders.
-            GrantAccess(followup: true) { model.requestAccess() }
+            GrantAccess(followup: true) { model.requestAccess(preferHome: true) }
         } else if model.groups.isEmpty {
             ContentUnavailableViewCompat()
         } else if visibleGroups.isEmpty {

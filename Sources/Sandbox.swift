@@ -117,16 +117,25 @@ enum SandboxAccess {
     /// Shows a folder-open panel and stores whatever the user grants. Returns the
     /// granted URL, or nil if they cancelled.
     @MainActor
-    static func requestAccess(startingAt directory: URL? = nil) -> URL? {
+    static func requestAccess(preferHome: Bool = false) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = false
         panel.prompt = "Grant Access"
-        panel.title = "Choose a Folder to Scan"
-        panel.message = "Pick a folder for DevSweep to scan. Your Home folder covers every cache; you can also pick a single project or cache directory."
-        panel.directoryURL = directory ?? realHome
+
+        if preferHome {
+            // Open in /Users so the home folder itself is a single click away —
+            // selecting the *current* folder is easy to miss otherwise.
+            panel.title = "Add Your Home Folder"
+            panel.message = "Select the folder named “\(realHome.lastPathComponent)”, then click Grant Access. This lets DevSweep find every developer cache in one step."
+            panel.directoryURL = realHome.deletingLastPathComponent()
+        } else {
+            panel.title = "Choose a Folder to Scan"
+            panel.message = "Pick a folder for DevSweep to scan. Your Home folder covers every cache; you can also pick a single project or cache directory."
+            panel.directoryURL = realHome
+        }
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         store(url)
