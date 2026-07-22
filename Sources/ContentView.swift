@@ -24,7 +24,11 @@ struct ContentView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 1060, minHeight: 620)
+        // The minimum is the width the header genuinely needs at its narrowest
+        // (see `header`), not an aspiration — below it, controls would be clipped
+        // rather than merely cramped. The size it *opens* at is `defaultSize` on
+        // the WindowGroup.
+        .frame(minWidth: 900, minHeight: 620)
         .onAppear {
             if !welcomeSeen { showWelcome = true }
             if model.groups.isEmpty { model.rescan() }
@@ -99,7 +103,25 @@ struct ContentView: View {
 
     // MARK: - Header
 
+    /// Two rows, deliberately.
+    ///
+    /// Everything here is `fixedSize` — a truncated control label reads as a bug,
+    /// so nothing is allowed to compress. That makes the row's width a hard
+    /// requirement, and one row carrying the summary, the gauge, three menus, the
+    /// search field *and* a four-segment picker needs ~1350pt before anything is
+    /// clipped. Splitting it in two brings the requirement down to ~780pt, which
+    /// fits every Mac at every text size.
     private var header: some View {
+        VStack(spacing: 10) {
+            summaryRow
+            findRow
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+    }
+
+    /// What is on the disk, and the actions that change it.
+    private var summaryRow: some View {
         HStack(alignment: .center, spacing: 18) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Fmt.size(model.reclaimableBytes))
@@ -110,6 +132,7 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .fixedSize()
 
             Divider().frame(height: 36)
 
@@ -117,12 +140,7 @@ struct ContentView: View {
                       selected: model.selectedBytes,
                       trash: model.trashBytes)
 
-            Spacer()
-
-            if model.scanning {
-                ProgressView().controlSize(.small)
-                Text(model.status).font(.caption).foregroundStyle(.secondary)
-            }
+            Spacer(minLength: 12)
 
             // Sandbox build: let the user see and manage the folders they granted.
             if model.isSandboxed {
@@ -156,26 +174,6 @@ struct ContentView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
             }
-
-            SearchField(text: $search, focused: $searchFocused)
-                .frame(width: 170)
-                // An invisible button is the standard way to route a shortcut to
-                // a focus change; TextField cannot carry one itself.
-                .background(
-                    Button("") { searchFocused = true }
-                        .keyboardShortcut("f", modifiers: .command)
-                        .opacity(0)
-                )
-
-            Picker("", selection: $filter) {
-                Text("All").tag(SafetyTag?.none)
-                ForEach(SafetyTag.allCases, id: \.self) { tag in
-                    Text(tag.label).tag(SafetyTag?.some(tag))
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 240)
 
             Menu {
                 Button("Select all safe items") { model.selectAllSafe() }
@@ -223,10 +221,48 @@ struct ContentView: View {
             } label: {
                 Label("Rescan", systemImage: "arrow.clockwise")
             }
+            .fixedSize()
             .disabled(model.scanning)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+    }
+
+    /// Narrowing the list: search, live scan status, and the safety-tag filter.
+    private var findRow: some View {
+        HStack(alignment: .center, spacing: 12) {
+            SearchField(text: $search, focused: $searchFocused)
+                .frame(minWidth: 150, idealWidth: 220, maxWidth: 260)
+                // An invisible button is the standard way to route a shortcut to
+                // a focus change; TextField cannot carry one itself.
+                .background(
+                    Button("") { searchFocused = true }
+                        .keyboardShortcut("f", modifiers: .command)
+                        .opacity(0)
+                )
+
+            if model.scanning {
+                ProgressView().controlSize(.small)
+                // Status strings are short and known (see ScanModel), so this can
+                // ask for its full width instead of truncating.
+                Text(model.status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+            }
+
+            Spacer(minLength: 12)
+
+            Picker("", selection: $filter) {
+                Text("All").tag(SafetyTag?.none)
+                ForEach(SafetyTag.allCases, id: \.self) { tag in
+                    Text(tag.label).tag(SafetyTag?.some(tag))
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            // Sized by its longest label ("Protected"), never cropped to a
+            // guessed width.
+            .fixedSize()
+        }
     }
 
     // MARK: - List
@@ -341,6 +377,7 @@ struct ContentView: View {
                 Text("The Trash holds \(Fmt.size(model.trashBytes)). Your disk does not get that space back until you empty it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button("Open Trash") {
                     NSWorkspace.shared.open(
                         FileManager.default.homeDirectoryForCurrentUser
@@ -352,6 +389,7 @@ struct ContentView: View {
                 Text("Everything is moved to the Trash, never deleted outright. Nothing is gone until you empty it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer()
@@ -374,6 +412,7 @@ struct ContentView: View {
                 Text(mainButtonTitle)
                     .frame(minWidth: 240)
             }
+            .fixedSize()
             .keyboardShortcut(.defaultAction)
             .disabled(model.scanning || (model.selected.isEmpty && model.safeBytes == 0))
         }
@@ -425,7 +464,10 @@ private struct DiskGauge: View {
     let selected: Int64
     let trash: Int64
 
-    private let width: CGFloat = 190
+    /// The width of the bar itself. The block around it is free to be wider when
+    /// the caption needs it — "123.4 GB selected — freed once emptied" is 203pt,
+    /// so pinning the block to the bar's width used to clip it.
+    private let width: CGFloat = 200
 
     var body: some View {
         if let disk, disk.total > 0 {
@@ -440,15 +482,16 @@ private struct DiskGauge: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .fixedSize()
 
                 bar(disk)
 
                 Text(caption)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .fixedSize()
             }
-            .frame(width: width, alignment: .leading)
+            .frame(minWidth: width, alignment: .leading)
             .help("\(Fmt.size(disk.used)) used, \(Fmt.size(disk.free)) free.")
         }
     }
@@ -577,12 +620,16 @@ private struct NoMatches: View {
                 .foregroundStyle(.tertiary)
             if searching {
                 Text("Nothing matches “\(query)”.").font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("Try a tool name, a path, or clear the tag filter.")
                     .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Nothing here is tagged \(filter?.label ?? "that").").font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("Pick another tag, or All to see everything found.")
                     .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }
@@ -650,6 +697,7 @@ private struct ItemRow: View {
                 Text(entry.title)
                     .font(indent > 0 ? .caption : .body)
                     .foregroundStyle(locked ? .secondary : .primary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if !entry.note.isEmpty {
                     Text(entry.note)
                         .font(.caption)
@@ -766,7 +814,10 @@ struct TagBadge: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(Capsule().fill(bg))
-            .frame(width: 80)
+            // A floor, not a cap: "PROTECTED" is 76pt today, and a hard 80pt
+            // frame would let it spill over its neighbour at larger text sizes.
+            .fixedSize()
+            .frame(minWidth: 80)
     }
 
     private var fg: Color {
@@ -794,7 +845,9 @@ private struct TagExplainer: View {
             TagBadge(tag: tag)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tag.headline).font(.callout.weight(.medium))
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(tag.blurb).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }
@@ -814,10 +867,12 @@ private struct ReportBanner: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Moved \(report.moved) item\(report.moved == 1 ? "" : "s") to the Trash — \(Fmt.size(report.freed)) recoverable until you empty it.")
                     .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
                 if !report.failures.isEmpty {
                     Text("\(report.failures.count) could not be moved: \(report.failures.prefix(2).map { $0.url.lastPathComponent }.joined(separator: ", "))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer()
@@ -853,9 +908,11 @@ private struct HomeGrantBanner: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Add your Home folder for a complete scan")
                     .font(.callout.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("You've granted specific folders, so this list is partial. Most caches — Xcode, npm, Gradle, and the rest — live under your Home folder.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             Button(action: addHome) {
@@ -863,6 +920,7 @@ private struct HomeGrantBanner: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
+            .fixedSize()
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
@@ -885,10 +943,12 @@ private struct Scanning: View {
             Text(status)
                 .font(.headline)
                 .contentTransition(.opacity)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Measuring your caches and walking your projects. This usually takes a few seconds.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -913,12 +973,15 @@ private struct GrantAccess: View {
                 .foregroundStyle(.tint)
             Text(followup ? "No caches in the folders you added" : "Grant a folder to scan")
                 .font(.title3.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             Text(followup
                  ? "Developer caches live under your **Home folder** (Xcode, npm, Gradle, and the rest). Add it to let DevSweep find them — you can still remove it later."
                  : "DevSweep only looks where you let it. Choose your **Home folder** to cover every cache, or a single project or cache directory to keep it narrow. You can add or remove folders any time.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 440)
             Button(action: grant) {
                 Label(followup ? "Add Home Folder…" : "Choose Folder…", systemImage: "folder")
@@ -930,6 +993,7 @@ private struct GrantAccess: View {
             Text("Nothing is read or deleted until you pick a folder.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -944,8 +1008,11 @@ private struct ContentUnavailableViewCompat: View {
                 .font(.system(size: 34))
                 .foregroundStyle(.tertiary)
             Text("Nothing found to clean.").font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Either your caches are already empty, or DevSweep could not read them.")
                 .font(.caption).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -966,9 +1033,11 @@ private struct ConfirmSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Move \(items.count) item\(items.count == 1 ? "" : "s") to the Trash?")
                     .font(.title3.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("\(Fmt.size(model.selectedBytes)) will be freed once you empty the Trash. Until then everything below is recoverable.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(20)
 
@@ -977,6 +1046,7 @@ private struct ConfirmSheet: View {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     Text("\(review.count) of these are tagged **Review** — they take real time or bandwidth to rebuild.")
                         .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                 }
                 .padding(.horizontal, 20)
@@ -1021,6 +1091,6 @@ private struct ConfirmSheet: View {
             }
             .padding(16)
         }
-        .frame(width: 620)
+        .frame(width: 680)
     }
 }

@@ -43,7 +43,11 @@ struct WelcomeView: View {
 
             footer
         }
-        .frame(width: 640, height: 560)
+        // A hard height would crop the longest page if the system text size grows.
+        // The tallest page measures 419pt today, so 560 is the comfortable resting
+        // size and the sheet grows rather than clips if it ever needs more.
+        .frame(width: 640)
+        .frame(minHeight: 560)
         .background(.background)
     }
 
@@ -113,6 +117,7 @@ private struct PageContent: View {
             Text(page.title)
                 .font(.system(size: 26, weight: .bold))
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
 
             if let story = page.story {
                 Text(.init(story))
@@ -120,6 +125,7 @@ private struct PageContent: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 500)
             }
 
@@ -150,7 +156,9 @@ private struct StepRow: View {
                 .background(Circle().fill(Color.accentColor))
             VStack(alignment: .leading, spacing: 2) {
                 Text(.init(title)).font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(.init(detail)).font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
