@@ -48,6 +48,31 @@ enum SandboxAccess {
             ?? roots.first { home.hasPrefix($0.standardizedFileURL.path + "/") }
     }
 
+    /// The roots the project walker should actually start from.
+    ///
+    /// A grant of an ancestor (`/Users`, say) does reach the home folder, but
+    /// starting the walk there is nearly useless: the extra level eats the
+    /// walker's depth budget and the sweep drags in other accounts. On this
+    /// machine `/Users` yielded 1 project row where the home folder yields 26.
+    /// So any granted ancestor of home is replaced by home itself — the same
+    /// substitution `homeRoot` already makes for the catalog scan.
+    static var projectRoots: [URL] {
+        guard isSandboxed else { return [realHome] }
+        let home = realHome.standardizedFileURL
+        let mapped = dedupe(roots.map {
+            home.path.hasPrefix($0.standardizedFileURL.path + "/") ? home : $0
+        })
+        // Drop any root that another root already covers, so a folder granted
+        // alongside its own parent is not walked (and listed) twice.
+        return mapped.filter { candidate in
+            !mapped.contains { other in
+                other.standardizedFileURL.path != candidate.standardizedFileURL.path
+                    && candidate.standardizedFileURL.path
+                        .hasPrefix(other.standardizedFileURL.path + "/")
+            }
+        }
+    }
+
     /// Whether there is anything to scan at all. Any granted folder counts — the
     /// project walker runs over whatever roots exist. The cache catalog needs the
     /// home folder specifically (see `homeRoot`), but a subfolder grant still gives

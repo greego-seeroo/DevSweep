@@ -149,8 +149,9 @@ final class ScanModel: ObservableObject {
         status = "Measuring caches…"
         lastReport = nil
         let skip = Set(excluded.map(\.standardizedFileURL.path))
-        // Outside the sandbox the whole home is walked; inside, only granted roots.
-        let projectRoots = SandboxAccess.isSandboxed ? SandboxAccess.roots : [SafetyGuard.home]
+        // Outside the sandbox the whole home is walked; inside, the granted roots
+        // normalised so an ancestor grant still starts at the home folder.
+        let projectRoots = SandboxAccess.projectRoots
         // The cache catalog is home-relative, so it can only run when the home
         // folder itself was granted. A subfolder grant still gets a project scan.
         let runCatalog = !SandboxAccess.isSandboxed || SandboxAccess.homeRoot != nil
