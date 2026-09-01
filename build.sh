@@ -12,6 +12,17 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$RES"
 cp Info.plist "$APP/Contents/Info.plist"
 
+# Info.plist references $(MARKETING_VERSION)/$(CURRENT_PROJECT_VERSION) so the
+# version typed into Xcode is the single source of truth. Xcode substitutes
+# them during its build; this script has to do the same by hand.
+MV="$(sed -n 's/.*MARKETING_VERSION = \(.*\);/\1/p' DevSweep.xcodeproj/project.pbxproj | head -1)"
+BV="$(sed -n 's/.*CURRENT_PROJECT_VERSION = \(.*\);/\1/p' DevSweep.xcodeproj/project.pbxproj | head -1)"
+/usr/libexec/PlistBuddy \
+  -c "Set :CFBundleShortVersionString ${MV:-0.0}" \
+  -c "Set :CFBundleVersion ${BV:-1}" \
+  "$APP/Contents/Info.plist"
+echo "› version ${MV:-?} (build ${BV:-?})"
+
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 ARCH="$(uname -m)"
 
