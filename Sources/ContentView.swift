@@ -12,8 +12,9 @@ struct ContentView: View {
     @State private var pendingPrune: PruneTool?
     @FocusState private var searchFocused: Bool
 
-    /// Shown once, ever. Bumping the suffix would re-show it after a redesign.
-    @AppStorage("devsweep.welcomeSeen.v1") private var welcomeSeen = false
+    /// Shown once, ever. Bumping the suffix re-shows it after a redesign —
+    /// v2: the intro gained the Developer / System Data modes page.
+    @AppStorage("devsweep.welcomeSeen.v2") private var welcomeSeen = false
     @State private var showWelcome = false
 
     var body: some View {
@@ -173,6 +174,9 @@ struct ContentView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                // Granting or revoking a folder mid-scan would invalidate the
+                // scan in flight; wait it out.
+                .disabled(model.scanning)
             }
 
             Menu {
@@ -215,6 +219,9 @@ struct ContentView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            // Everything in here either changes the selection of a list that is
+            // still being built or kicks off work that conflicts with the scan.
+            .disabled(model.scanning)
 
             Button {
                 model.rescan()
@@ -226,9 +233,17 @@ struct ContentView: View {
         }
     }
 
-    /// Narrowing the list: search, live scan status, and the safety-tag filter.
+    /// Narrowing the list: audience mode, search, live scan status, and the
+    /// safety-tag filter.
     private var findRow: some View {
         HStack(alignment: .center, spacing: 12) {
+            // Who the scan is for. Always clickable: switching mid-scan cancels
+            // the scan in flight and starts the new mode's straight after.
+            AudienceTabs(selection: model.audience) {
+                model.setAudience($0)
+            }
+            .help("Developer: toolchains, caches and build output. System Data: app caches, logs and device backups.")
+
             SearchField(text: $search, focused: $searchFocused)
                 .frame(minWidth: 150, idealWidth: 220, maxWidth: 260)
                 // An invisible button is the standard way to route a shortcut to
@@ -304,7 +319,9 @@ struct ContentView: View {
     @ViewBuilder
     private var content: some View {
         if let report = model.lastReport, report.moved > 0 || !report.failures.isEmpty {
-            ReportBanner(report: report) { model.lastReport = nil }
+            ReportBanner(report: report,
+                         putBack: { model.undoLastClean() },
+                         dismiss: { model.lastReport = nil })
         }
 
         // Only subfolders granted: results are partial. Nudge toward the home
@@ -493,6 +510,9 @@ private struct DiskGauge: View {
             }
             .frame(minWidth: width, alignment: .leading)
             .help("\(Fmt.size(disk.used)) used, \(Fmt.size(disk.free)) free.")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Disk space")
+            .accessibilityValue("\(Fmt.size(disk.free)) free of \(Fmt.size(disk.total)). \(caption)")
         }
     }
 
@@ -528,6 +548,50 @@ private struct DiskGauge: View {
             return "\(Fmt.size(trash)) already in the Trash"
         }
         return "\(Fmt.size(disk?.used ?? 0)) used"
+    }
+}
+
+/// The Developer / System Data switch: a capsule with a sliding accent pill,
+/// icon + label per side. Styled as the header's one bold control — this is the
+/// choice that decides what the whole window shows.
+private struct AudienceTabs: View {
+    let selection: Audience
+    let choose: (Audience) -> Void
+
+    @Namespace private var pill
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Audience.allCases, id: \.self) { audience in
+                let on = selection == audience
+                Button { choose(audience) } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: audience.icon)
+                            .font(.caption)
+                        Text(audience.label)
+                            .font(.callout.weight(on ? .semibold : .regular))
+                    }
+                    .foregroundStyle(on ? Color.white : Color.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background {
+                        if on {
+                            Capsule()
+                                .fill(Color.accentColor)
+                                .matchedGeometryEffect(id: "selected", in: pill)
+                        }
+                    }
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(audience.label))
+                .accessibilityAddTraits(on ? [.isSelected] : [])
+            }
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.secondary.opacity(0.12)))
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: selection)
+        .fixedSize()
     }
 }
 
@@ -676,6 +740,10 @@ private struct ItemRow: View {
                     on: model.isSelected(entry),
                     partial: model.isPartiallySelected(entry)
                 ) { model.toggle(entry) }
+                    .accessibilityLabel(Text("Select \(entry.title)"))
+                    .accessibilityValue(model.isSelected(entry) ? "selected"
+                        : model.isPartiallySelected(entry) ? "partially selected"
+                        : "not selected")
             }
 
             if isParent {
@@ -687,8 +755,15 @@ private struct ItemRow: View {
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .frame(width: 12)
+                        // A 12pt chevron is a fiddly target. Pad the hit area out
+                        // to ~28pt and pull the layout back in, same trick as the
+                        // checkbox — the row looks identical, the click doesn't miss.
+                        .padding(8)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .padding(-8)
+                .accessibilityLabel(isExpanded ? "Collapse \(entry.title)" : "Expand \(entry.title)")
             } else if indent == 0 {
                 Color.clear.frame(width: 12, height: 1)
             }
@@ -792,6 +867,8 @@ private struct SizeBar: View {
             Capsule().fill(color).frame(width: max(2, 90 * ratio))
         }
         .frame(width: 90, height: 5)
+        // Decorative: the size it visualises sits right beside it as text.
+        .accessibilityHidden(true)
     }
 
     private var color: Color {
@@ -858,6 +935,7 @@ private struct TagExplainer: View {
 
 private struct ReportBanner: View {
     let report: Scanner.DeleteReport
+    let putBack: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
@@ -876,6 +954,12 @@ private struct ReportBanner: View {
                 }
             }
             Spacer()
+            // The one undo: everything the report moved goes back where it was.
+            if report.moved > 0 {
+                Button("Put Back") { putBack() }
+                    .buttonStyle(.link)
+                    .help("Restores every item from this cleanup to where it came from.")
+            }
             Button("Open Trash") {
                 NSWorkspace.shared.open(
                     FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"))
@@ -1060,10 +1144,21 @@ private struct ConfirmSheet: View {
                     ForEach(items) { item in
                         HStack(spacing: 8) {
                             TagBadge(tag: item.tag)
-                            Text(item.url.path.replacingOccurrences(of: SafetyGuard.home.path, with: "~"))
-                                .font(.caption.monospaced())
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                            // Lead with the name the list showed ("Spotify",
+                            // "web-app › node_modules") — the raw path is the
+                            // small print, not the headline, at the one moment
+                            // the user is deciding whether to trust the app.
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.title)
+                                    .font(.callout)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Text(item.url.path.replacingOccurrences(of: SafetyGuard.home.path, with: "~"))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
                             Spacer()
                             Text(Fmt.size(item.bytes))
                                 .font(.caption.monospacedDigit())

@@ -270,6 +270,23 @@ enum SafetyGuard {
     }
 }
 
+// MARK: - Auto mode
+
+/// The one decision the app makes for the user: someone who downloads a cleaner
+/// onto a Mac with no developer tooling should land in System Data without ever
+/// learning what the tabs mean.
+enum AutoMode {
+    /// After a Developer scan: switch when the user has never picked a mode
+    /// themselves and the scan came back completely empty — no caches, no
+    /// project artifacts, not even a protected row means no developer has ever
+    /// worked on this machine. An explicit choice is never overridden.
+    static func shouldSwitchToSystemData(groups: [ScanGroup],
+                                         audience: Audience,
+                                         userPicked: Bool) -> Bool {
+        audience == .developer && !userPicked && groups.isEmpty
+    }
+}
+
 // MARK: - The disk itself
 
 /// What the boot volume looks like right now. `free` is the capacity macOS will
@@ -283,24 +300,27 @@ struct DiskSpace {
     var used: Int64 { max(0, total - free) }
 
     static func current() -> DiskSpace? {
+        // A fresh URL on every read. NSURL caches resource values per object, and
+        // that cache is only flushed by the main run loop — these reads happen on
+        // background tasks, so a long-lived URL (SafetyGuard.home is a static let)
+        // would keep reporting the free space from its very first read.
+        let volume = URL(fileURLWithPath: SafetyGuard.home.path)
         let keys: Set<URLResourceKey> = [
             .volumeTotalCapacityKey,
             .volumeAvailableCapacityForImportantUsageKey,
             .volumeAvailableCapacityKey,
         ]
-        guard let values = try? SafetyGuard.home.resourceValues(forKeys: keys),
+        guard let values = try? volume.resourceValues(forKeys: keys),
               let total = values.volumeTotalCapacity
         else { return nil }
 
-        // `forImportantUsage` is the honest one; fall back if the volume won't say.
-        let free: Int64
-        if let important = values.volumeAvailableCapacityForImportantUsage {
-            free = important
-        } else {
-            free = Int64(values.volumeAvailableCapacity ?? 0)
-        }
-
-        return DiskSpace(total: Int64(total), free: free)
+        // `forImportantUsage` is the number Finder shows (it counts purgeable
+        // space), but it can lag a deletion by several seconds. The plain
+        // statfs-backed capacity updates immediately, so freed space shows up in
+        // whichever is larger.
+        let important = values.volumeAvailableCapacityForImportantUsage ?? 0
+        let available = Int64(values.volumeAvailableCapacity ?? 0)
+        return DiskSpace(total: Int64(total), free: max(important, available))
     }
 }
 

@@ -210,6 +210,96 @@ check(deadContainers.isEmpty, "every expanded rule can offer children \(deadCont
 let relative = Catalog.rules.filter { $0.relPath.hasPrefix("/") || $0.relPath.contains("..") }
 check(relative.isEmpty, "every rule path is clean and home-relative \(relative.map(\.relPath))")
 
+section("Everyday catalog integrity")
+
+let edUnknown = Set(Catalog.everydayRules.map(\.group)).subtracting(Catalog.groupOrder)
+check(edUnknown.isEmpty, "every everyday group is in groupOrder \(edUnknown)")
+
+let edRelative = Catalog.everydayRules.filter { $0.relPath.hasPrefix("/") || $0.relPath.contains("..") }
+check(edRelative.isEmpty, "every everyday rule path is clean and home-relative \(edRelative.map(\.relPath))")
+
+let edDeadRules = Catalog.everydayRules
+    .filter { $0.tag != .never && !$0.expand }
+    .filter { !SafetyGuard.isDeletable(home.appendingPathComponent($0.relPath)) }
+check(edDeadRules.isEmpty, "every everyday whole-directory rule passes the guard \(edDeadRules.map(\.relPath))")
+
+let edDeadContainers = Catalog.everydayRules
+    .filter { $0.tag != .never && $0.expand }
+    .filter { !SafetyGuard.isDeletable(home.appendingPathComponent($0.relPath).appendingPathComponent("x")) }
+check(edDeadContainers.isEmpty, "every everyday expanded rule can offer children \(edDeadContainers.map(\.relPath))")
+
+// A user who taps "Select everything safe" must never mass-select app caches or
+// device backups — losing those costs sign-ins and irreplaceable backups.
+check(!Catalog.everydayRules.contains { $0.tag == .safe && $0.relPath != "Library/Logs" },
+      "only logs are tagged Safe in the everyday catalog")
+
+// The two catalogs must never bleed into each other: a System Data scan shows
+// no toolchains, a Developer scan shows no app caches.
+let everydayGroups = Set(Catalog.everydayRules.map(\.group))
+check(Catalog.activeRules(for: .everyday).allSatisfy { everydayGroups.contains($0.group) },
+      "a System Data scan includes only everyday rules")
+check(Catalog.activeRules(for: .developer).allSatisfy { !everydayGroups.contains($0.group) },
+      "a Developer scan includes no everyday rules")
+
+// MARK: - 4b. Sizing: the fts walker
+
+section("Sizing")
+
+fixture("sizes/plain/a.bin", bytes: 1_000_000)
+fixture("sizes/plain/b.bin", bytes: 500_000)
+// Regression: the old FileManager walk skipped package descendants, so caches
+// full of .app bundles (Electron, Playwright browsers) reported near zero.
+fixture("sizes/bundle/Fake.app/Contents/MacOS/fake", bytes: 750_000)
+fixtureDir("sizes/withlink")
+let sizeRoot = fixtureRoot.appendingPathComponent("sizes")
+try? fm.createSymbolicLink(
+    at: sizeRoot.appendingPathComponent("withlink/escape"),
+    withDestinationURL: sizeRoot.appendingPathComponent("plain"))
+
+let measuredSizes = Scanner.sizes(of: [
+    sizeRoot.appendingPathComponent("plain"),
+    sizeRoot.appendingPathComponent("bundle"),
+    sizeRoot.appendingPathComponent("withlink"),
+])
+let plainBytes = measuredSizes[sizeRoot.appendingPathComponent("plain").path] ?? 0
+check(plainBytes >= 1_500_000, "all files in a directory are counted (got \(plainBytes))")
+check(plainBytes <= 4_000_000, "allocated size stays in the right ballpark (got \(plainBytes))")
+let bundleBytes = measuredSizes[sizeRoot.appendingPathComponent("bundle").path] ?? 0
+check(bundleBytes >= 750_000, "files inside .app bundles are counted (got \(bundleBytes))")
+let linkBytes = measuredSizes[sizeRoot.appendingPathComponent("withlink").path] ?? 0
+check(linkBytes < 100_000, "symlinks are not followed when sizing (got \(linkBytes))")
+
+// MARK: - 4c. Cancellation: a scan told to stop, stops
+
+section("Cancellation")
+
+let fresh = CancelFlag()
+check(!fresh.isCancelled, "a fresh flag is not cancelled")
+fresh.cancel()
+check(fresh.isCancelled, "cancel() sticks")
+
+let stopped = CancelFlag()
+stopped.cancel()
+check(Scanner.sizes(of: [sizeRoot], cancel: stopped).isEmpty,
+      "a cancelled sizing run measures nothing")
+check(Scanner.scanProjects(roots: [walkRoot], cancel: stopped) == nil,
+      "a cancelled project scan returns nothing")
+check(Scanner.scanProjects(roots: [walkRoot], cancel: CancelFlag()) != nil,
+      "an uncancelled flag changes nothing")
+
+// MARK: - 4d. Disk space: fresh on every read
+
+section("Disk space")
+
+if let first = DiskSpace.current(), let second = DiskSpace.current() {
+    check(first.total > 0 && first.free > 0, "disk space reads")
+    check(first.free <= first.total, "free never exceeds total")
+    check(first.used >= 0, "used is never negative")
+    check(second.free > 0 && second.total == first.total, "a second read also succeeds")
+} else {
+    check(false, "DiskSpace.current() returned nil")
+}
+
 // MARK: - 5. Size parsing (display-only, but shouldn't lie)
 
 section("Size parsing")
@@ -275,8 +365,115 @@ let okReport = Scanner.trash([ScanItem(title: "victim", note: "", url: victim, t
 check(okReport.moved == 1 && okReport.failures.isEmpty, "deletable item moves to the Trash")
 check(!fm.fileExists(atPath: victim.path), "item is gone from its origin")
 check(okReport.movedURLs == [victim], "the report records what moved, at its original path")
-// Best-effort tidy-up of our fixture from the Trash; the name is unique to this run.
-try? fm.removeItem(at: h(".Trash/\(victimName)"))
+check(okReport.moves.count == 1 && okReport.moves.first?.trashed != victim,
+      "the report records where in the Trash it landed")
+
+section("Put Back (undo)")
+
+// Round trip: what was trashed comes back exactly where it was.
+let undone = Scanner.restore(okReport)
+check(undone.restored == 1 && undone.skipped == 0, "restore puts the item back")
+check(fm.fileExists(atPath: victim.appendingPathComponent("junk.bin").path),
+      "restored directory has its contents")
+if let trashed = okReport.moves.first?.trashed {
+    check(!fm.fileExists(atPath: trashed.path), "the item left the Trash")
+}
+check(Scanner.restore(okReport).restored == 0, "a second restore has nothing to do")
+
+// Never overwrite: if the tool already rebuilt the directory, the restore skips.
+let reReport = Scanner.trash([ScanItem(title: "victim", note: "", url: victim, tag: .safe, bytes: 1)])
+try? fm.createDirectory(at: victim, withIntermediateDirectories: true)
+let blocked = Scanner.restore(reReport)
+check(blocked.restored == 0 && blocked.skipped == 1, "restore never overwrites a rebuilt directory")
+if let trashed = reReport.moves.first?.trashed {
+    check(fm.fileExists(atPath: trashed.path), "the skipped item stays safely in the Trash")
+    try? fm.removeItem(at: trashed)   // tidy up exactly our own fixture
+}
+
+// Never write outside $HOME, even from a corrupted report.
+fixture("restore/src.bin")
+var evil = Scanner.DeleteReport()
+evil.moves = [(original: URL(fileURLWithPath: "/private/tmp/devsweep-evil-\(ProcessInfo.processInfo.processIdentifier)"),
+               trashed: fixtureRoot.appendingPathComponent("restore/src.bin"))]
+let evilResult = Scanner.restore(evil)
+check(evilResult.restored == 0 && evilResult.skipped == 1, "restore refuses destinations outside home")
+check(fm.fileExists(atPath: fixtureRoot.appendingPathComponent("restore/src.bin").path),
+      "the refused item is left untouched")
+
+section("Auto mode")
+
+let devGroups = [ScanGroup(name: "Xcode", items: [
+    ScanItem(title: "x", note: "", url: h("Library/Developer/Xcode/DerivedData"), tag: .safe, bytes: 1),
+])]
+check(AutoMode.shouldSwitchToSystemData(groups: [], audience: .developer, userPicked: false),
+      "an empty Developer scan on an untouched machine switches to System Data")
+check(!AutoMode.shouldSwitchToSystemData(groups: devGroups, audience: .developer, userPicked: false),
+      "a machine with developer caches stays in Developer")
+check(!AutoMode.shouldSwitchToSystemData(groups: [], audience: .developer, userPicked: true),
+      "the user's explicit choice is never overridden")
+check(!AutoMode.shouldSwitchToSystemData(groups: [], audience: .everyday, userPicked: false),
+      "System Data never auto-switches away")
+
+// MARK: - 6c. Friendly names: what the list and the confirm sheet lead with
+
+section("Friendly names")
+
+let safari = Scanner.friendlyChild(h("Library/Caches/com.apple.Safari"))
+check(safari.title == "Safari" && safari.note == "com.apple.Safari",
+      "bundle ids become app names (got “\(safari.title)”)")
+let plainName = Scanner.friendlyChild(h("Library/Caches/Homebrew"))
+check(plainName.title == "Homebrew" && plainName.note.isEmpty,
+      "ordinary folder names pass through untouched")
+let dotName = Scanner.friendlyChild(h(".cache"))
+check(dotName.title == ".cache" && dotName.note.isEmpty, "dot-folders pass through untouched")
+let ghostApp = Scanner.friendlyChild(h("Library/Caches/com.nonexistent.devsweep-zzz"))
+check(ghostApp.title == "com.nonexistent.devsweep-zzz",
+      "bundle ids of apps not installed stay as they are")
+
+// MARK: - 6d. A user's journey, end to end
+
+section("A user's journey (scan → tick → clean → regret → put back)")
+
+// A small web project, as a user's disk would have it.
+fixture("journey/web-app/package.json", bytes: 100)
+fixture("journey/web-app/node_modules/lib/index.js", bytes: 250_000)
+fixture("journey/web-app/dist/bundle.js", bytes: 90_000)
+let journeyRoot = fixtureRoot.appendingPathComponent("journey")
+
+if let foundGroup = Scanner.scanProjects(roots: [journeyRoot]) {
+    // The user scans and sees rows with sizes.
+    let leaves = foundGroup.items.flatMap(\.deletableLeaves)
+    check(leaves.count == 2, "the scan finds the build output (\(leaves.map(\.title)))")
+    check(leaves.allSatisfy { $0.bytes > 0 }, "every row shows a real size")
+
+    // They tick everything and clean.
+    let cleanReport = Scanner.trash(leaves)
+    check(cleanReport.moved == leaves.count && cleanReport.failures.isEmpty,
+          "one click moves the lot to the Trash")
+
+    // The list updates itself without a rescan.
+    let afterClean = [foundGroup].removing(paths: Set(cleanReport.movedURLs.map(\.path)))
+    check(afterClean.isEmpty, "the cleaned rows disappear without a rescan")
+    check(!fm.fileExists(atPath: journeyRoot.appendingPathComponent("web-app/node_modules").path),
+          "the folders are really gone from the project")
+
+    // They regret it and press Put Back.
+    let putBack = Scanner.restore(cleanReport)
+    check(putBack.restored == cleanReport.moved && putBack.skipped == 0,
+          "Put Back restores the whole cleanup")
+    check(fm.fileExists(atPath: journeyRoot.appendingPathComponent("web-app/node_modules/lib/index.js").path),
+          "node_modules is back, contents intact")
+    check(fm.fileExists(atPath: journeyRoot.appendingPathComponent("web-app/dist/bundle.js").path),
+          "dist is back, contents intact")
+
+    // And a rescan finds everything offered again.
+    let rescanned = Scanner.scanProjects(roots: [journeyRoot])
+    check(rescanned?.items.flatMap(\.deletableLeaves).count == 2, "a rescan offers the restored rows again")
+} else {
+    check(false, "journey scan found nothing")
+}
+
+section("Trash flow, continued")
 
 // Verify the landing spot with the same API the app uses. Enumerating ~/.Trash
 // is TCC-protected for command-line processes, but trashItem hands back the
@@ -344,6 +541,40 @@ if CommandLine.arguments.contains("--live") {
     var seen = Set<String>()
     let dupRows = paths.filter { !seen.insert($0).inserted }
     check(dupRows.isEmpty, "no row appears twice \(dupRows.prefix(3))")
+
+    section("Live System Data scan (slow)")
+
+    let edScanned = Scanner.scanCatalog(audience: .everyday)
+    check(!edScanned.isEmpty, "System Data scan finds something on a real machine")
+    check(edScanned.allSatisfy { everydayGroups.contains($0.name) },
+          "System Data results carry only everyday groups \(edScanned.map(\.name))")
+
+    let edLeaves = edScanned.flatMap(\.items).flatMap(\.deletableLeaves)
+    let edBlocked = edLeaves.filter { !SafetyGuard.isDeletable($0.url) }
+    check(edBlocked.isEmpty, "every System Data row passes the guard (\(edBlocked.count) blocked)")
+
+    let edPaths = edLeaves.map(\.url.standardizedFileURL.path).sorted()
+    var edNested: [String] = []
+    for (i, p) in edPaths.enumerated() {
+        if i + 1 < edPaths.count, edPaths[i + 1].hasPrefix(p + "/") { edNested.append(edPaths[i + 1]) }
+    }
+    check(edNested.isEmpty, "no System Data row contains another \(edNested.prefix(3))")
+
+    // Streaming: partial assemblies arrive, and the final result is complete.
+    // The callback fires from worker threads, so collect under a lock and
+    // check afterwards.
+    var emissions = 0
+    var overshoot = false
+    let emitLock = NSLock()
+    let streamed = Scanner.scanCatalog(audience: .developer, onProgress: { _, done, total in
+        emitLock.lock()
+        emissions += 1
+        if done > total { overshoot = true }
+        emitLock.unlock()
+    })
+    check(!streamed.isEmpty, "streaming scan returns the full result")
+    check(!overshoot, "progress counter never overshoots")
+    print("  info streaming emitted \(emissions) partial update\(emissions == 1 ? "" : "s")")
 }
 
 // MARK: - Summary

@@ -1,5 +1,30 @@
 import Foundation
 
+/// Who a scan is for. Developer mode covers toolchains and build output;
+/// Everyday mode covers the caches any Mac accumulates — apps, logs, device
+/// backups — in language that doesn't assume you know what a toolchain is.
+enum Audience: String, CaseIterable {
+    case developer
+    case everyday
+
+    /// "System Data" is the name Settings ▸ Storage gives the bucket people are
+    /// trying to shrink, so that is the word the switch uses.
+    var label: String {
+        switch self {
+        case .developer: return "Developer"
+        case .everyday: return "System Data"
+        }
+    }
+
+    /// SF Symbol shown next to the label in the mode switch.
+    var icon: String {
+        switch self {
+        case .developer: return "hammer.fill"
+        case .everyday: return "internaldrive.fill"
+        }
+    }
+}
+
 /// A known location on a developer machine, with a hand-written verdict on
 /// whether losing it costs you anything.
 struct Rule {
@@ -56,6 +81,34 @@ enum Catalog {
         "Version managers",
         "Other caches",
         "Project artifacts",
+        // Everyday mode's groups. The two catalogs never run together, so the
+        // relative order between the two halves of this list never shows.
+        "App caches",
+        "Logs & diagnostics",
+        "iPhone & iPad backups",
+    ]
+
+    // MARK: - Everyday catalog
+
+    /// What Everyday mode scans. Deliberately short: a handful of places that are
+    /// genuinely safe to offer, each explained without developer vocabulary.
+    /// Browser caches surface as children of ~/Library/Caches (Chrome, Firefox);
+    /// Safari and Mail live in Library/Containers, which the guard protects.
+    static let everydayRules: [Rule] = [
+        Rule(group: "App caches", title: "App caches",
+             relPath: "Library/Caches", tag: .review,
+             note: "Files your apps saved so they load faster — one folder per app. Apps rebuild these, but some may sign you out or re-download data afterwards. Tick the big ones you recognise rather than everything.",
+             expand: true),
+
+        Rule(group: "Logs & diagnostics", title: "App logs",
+             relPath: "Library/Logs", tag: .safe,
+             note: "Diagnostic text files your apps wrote. Only useful when troubleshooting a problem; apps start new ones automatically.",
+             expand: true),
+
+        Rule(group: "iPhone & iPad backups", title: "Device backups",
+             relPath: "Library/Application Support/MobileSync/Backup", tag: .review,
+             note: "Complete backups of iPhones and iPads synced to this Mac — often tens of gigabytes. Only delete a backup if the device is gone or backed up to iCloud; it cannot be rebuilt from the Mac.",
+             expand: true),
     ]
 
     // MARK: - Catalog
@@ -743,9 +796,10 @@ enum Catalog {
     // MARK: - Active rules
 
     /// Rules whose path exists, plus the ones that can only be found at runtime.
-    static func activeRules() -> [Rule] {
-        var found = rules.filter { exists(SafetyGuard.home.appendingPathComponent($0.relPath)) }
-        found.append(contentsOf: dynamicRules())
+    static func activeRules(for audience: Audience = .developer) -> [Rule] {
+        let base = audience == .developer ? rules : everydayRules
+        var found = base.filter { exists(SafetyGuard.home.appendingPathComponent($0.relPath)) }
+        if audience == .developer { found.append(contentsOf: dynamicRules()) }
 
         // A rule that sits inside another rule would be counted twice. Keep the
         // more specific one and let the outer rule's expansion skip it (Scanner

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - Shell
 
@@ -190,123 +193,83 @@ struct PruneTool: Identifiable, Hashable {
     ]
 }
 
+// MARK: - Cancellation
+
+/// Set from the main thread to tell an in-flight scan to stop early — the user
+/// switched modes and the results would land in the wrong list. The walkers
+/// check it cooperatively; a cancelled scan returns fast and publishes nothing.
+final class CancelFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+
+    var isCancelled: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return flag
+    }
+
+    func cancel() {
+        lock.lock(); flag = true; lock.unlock()
+    }
+}
+
 // MARK: - Scanner
 
 enum Scanner {
 
     // MARK: - Sizing
 
-    /// Sizes many directories at once. Under the sandbox the app cannot launch
-    /// `du` (or any helper), so sizing walks the tree in-process with FileManager.
-    /// Outside the sandbox `du -x` is kept: it is faster and stays on one volume.
-    static func sizes(of urls: [URL]) -> [String: Int64] {
+    /// Sizes many directories at once, walking each tree in-process with `fts(3)`
+    /// — the same machinery `du` itself is built on, so it is just as fast, works
+    /// under the sandbox (no subprocess), and unlike the old FileManager walk it
+    /// counts what is inside app bundles, which caches full of `.app`s (Electron,
+    /// Playwright, simulator runtimes) are made of.
+    static func sizes(of urls: [URL], cancel: CancelFlag? = nil) -> [String: Int64] {
         guard !urls.isEmpty else { return [:] }
-
-        if SandboxAccess.isSandboxed {
-            var result: [String: Int64] = [:]
-            let lock = NSLock()
-            DispatchQueue.concurrentPerform(iterations: urls.count) { i in
-                let url = urls[i]
-                let bytes = walkSize(url)
-                lock.lock(); result[url.path] = bytes; lock.unlock()
-            }
-            return result
-        }
-
-        // Enough workers to keep the cores busy, but never one process per path.
-        // Paths are dealt round-robin rather than sliced, so a run of very large
-        // directories doesn't all land on the same worker.
-        let workers = min(8, max(1, urls.count))
-        let chunks: [[URL]] = (0 ..< workers).map { w in
-            urls.enumerated().compactMap { $0.offset % workers == w ? $0.element : nil }
-        }
-
         var result: [String: Int64] = [:]
         let lock = NSLock()
-
-        DispatchQueue.concurrentPerform(iterations: chunks.count) { i in
-            let partial = du(chunks[i])
-            lock.lock()
-            result.merge(partial) { _, new in new }
-            lock.unlock()
+        DispatchQueue.concurrentPerform(iterations: urls.count) { i in
+            guard cancel?.isCancelled != true else { return }
+            let url = urls[i]
+            let bytes = walkSize(url, cancel: cancel)
+            lock.lock(); result[url.path] = bytes; lock.unlock()
         }
         return result
     }
 
-    /// On-disk size of a file or directory, measured the way `du` does: allocated
-    /// blocks, summed over regular files, not following symlinks or crossing into
-    /// other volumes. Used only in the sandbox, where subprocesses are blocked.
-    private static func walkSize(_ url: URL) -> Int64 {
-        let fm = FileManager.default
-        let keys: Set<URLResourceKey> = [
-            .isRegularFileKey, .isDirectoryKey,
-            .totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .fileSizeKey,
-        ]
+    /// On-disk size of a file or directory, measured the way `du -x` does:
+    /// allocated blocks, never following symlinks, never crossing volumes.
+    private static func walkSize(_ url: URL, cancel: CancelFlag? = nil) -> Int64 {
+        let path = strdup(url.path)
+        defer { free(path) }
+        var argv: [UnsafeMutablePointer<CChar>?] = [path, nil]
 
-        func fileBytes(_ v: URLResourceValues) -> Int64 {
-            Int64(v.totalFileAllocatedSize ?? v.fileAllocatedSize ?? v.fileSize ?? 0)
-        }
-
-        guard let values = try? url.resourceValues(forKeys: keys) else { return 0 }
-        if values.isDirectory != true { return fileBytes(values) }
+        // FTS_PHYSICAL: don't follow symlinks. FTS_XDEV: stay on one volume, or a
+        // symlinked-in mount could balloon a cache's reported size.
+        guard let fts = fts_open(&argv, FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR, nil)
+        else { return 0 }
+        defer { fts_close(fts) }
 
         var total: Int64 = 0
-        guard let walker = fm.enumerator(
-            at: url,
-            includingPropertiesForKeys: Array(keys),
-            options: [.skipsPackageDescendants],
-            errorHandler: { _, _ in true }   // an unreadable subfolder just adds nothing
-        ) else { return 0 }
+        var seen = 0
+        while let entry = fts_read(fts) {
+            // A single huge tree (node_modules…) can take seconds; poll the flag
+            // every so often, not per entry.
+            seen += 1
+            if seen & 0x3FF == 0, cancel?.isCancelled == true { break }
 
-        // Staying on one volume mirrors `du -x`: without it, a symlinked-in mount
-        // could balloon a cache's reported size. Enumerator already skips symlinks.
-        let rootVolume = try? url.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier
-        for case let entry as URL in walker {
-            guard let v = try? entry.resourceValues(forKeys: keys) else { continue }
-            if let rootVolume,
-               let vol = try? entry.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier,
-               !vol.isEqual(rootVolume) {
-                walker.skipDescendants()
-                continue
+            switch Int32(entry.pointee.fts_info) {
+            // Files, and each directory once (post-order); directories occupy
+            // blocks too, which keeps the numbers matching what `du` reported.
+            // Unreadable entries just contribute nothing.
+            case FTS_F, FTS_DEFAULT, FTS_DP:
+                if let st = entry.pointee.fts_statp {
+                    total += Int64(st.pointee.st_blocks) * 512
+                }
+            default:
+                break
             }
-            if v.isRegularFile == true { total += fileBytes(v) }
         }
         return total
-    }
-
-    private static func du(_ urls: [URL]) -> [String: Int64] {
-        guard !urls.isEmpty else { return [:] }
-
-        // `du` takes the paths as arguments, so a very long list would blow past
-        // ARG_MAX. Chunk it.
-        var result: [String: Int64] = [:]
-        for batch in stride(from: 0, to: urls.count, by: 200).map({
-            Array(urls[$0 ..< min($0 + 200, urls.count)])
-        }) {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/du")
-            p.arguments = ["-sk", "-x"] + batch.map(\.path)
-
-            let out = Pipe()
-            p.standardOutput = out
-            p.standardError = FileHandle.nullDevice
-
-            do { try p.run() } catch { continue }
-
-            let data = out.fileHandleForReading.readDataToEndOfFile()
-            p.waitUntilExit()
-
-            guard let text = String(data: data, encoding: .utf8) else { continue }
-
-            for line in text.split(separator: "\n") {
-                // "12345\t/path/with spaces"
-                guard let tab = line.firstIndex(of: "\t") else { continue }
-                guard let kb = Int64(line[line.startIndex ..< tab]) else { continue }
-                let path = String(line[line.index(after: tab)...])
-                result[path] = kb * 1024
-            }
-        }
-        return result
     }
 
     /// How much is sitting in the Trash. Moving something there does not free a
@@ -319,9 +282,15 @@ enum Scanner {
 
     // MARK: - Catalog scan
 
-    static func scanCatalog() -> [ScanGroup] {
+    /// Scans the catalog for the given audience. `onProgress` (optional) is
+    /// called from a background thread as directories finish measuring, with the
+    /// groups assembled from everything measured so far plus done/total counts —
+    /// the UI can show rows filling in instead of a blank wait.
+    static func scanCatalog(audience: Audience = .developer,
+                            cancel: CancelFlag? = nil,
+                            onProgress: (([ScanGroup], Int, Int) -> Void)? = nil) -> [ScanGroup] {
         let fm = FileManager.default
-        let rules = Catalog.activeRules()
+        let rules = Catalog.activeRules(for: audience)
 
         // A rule that lives inside another rule's directory (~/.cache/pip inside
         // ~/.cache) must not also appear as one of that rule's children, or its
@@ -331,7 +300,9 @@ enum Scanner {
         struct Pending {
             let rule: Rule
             let url: URL
-            let children: [URL]
+            /// Immediate children to list as rows, display names resolved up
+            /// front — one LaunchServices lookup per child, not per re-assembly.
+            let children: [(url: URL, title: String, note: String)]
         }
 
         var pending: [Pending] = []
@@ -363,47 +334,101 @@ enum Scanner {
             } else {
                 toMeasure.append(contentsOf: children)
             }
-            pending.append(Pending(rule: rule, url: url, children: children))
+            pending.append(Pending(rule: rule, url: url, children: children.map {
+                let named = friendlyChild($0)
+                return ($0, named.title, named.note)
+            }))
         }
 
-        let measured = sizes(of: toMeasure)
+        func assemble(_ measured: [String: Int64]) -> [ScanGroup] {
+            var byGroup: [String: [ScanItem]] = [:]
+            for p in pending {
+                let childItems: [ScanItem] = p.children.map { child in
+                    ScanItem(
+                        title: child.title,
+                        note: child.note,
+                        url: child.url,
+                        tag: p.rule.tag,
+                        bytes: measured[child.url.path] ?? 0
+                    )
+                }
+                .filter { $0.bytes > 0 }
+                .sorted { $0.bytes > $1.bytes }
 
-        var byGroup: [String: [ScanItem]] = [:]
-        for p in pending {
-            let childItems: [ScanItem] = p.children.map { child in
-                ScanItem(
-                    title: child.lastPathComponent,
-                    note: "",
-                    url: child,
+                let item = ScanItem(
+                    title: p.rule.title,
+                    note: p.rule.note,
+                    url: p.url,
                     tag: p.rule.tag,
-                    bytes: measured[child.path] ?? 0
+                    bytes: childItems.isEmpty ? (measured[p.url.path] ?? 0) : 0,
+                    children: childItems
                 )
+
+                // Empty non-protected entries are just noise.
+                if item.totalBytes == 0 && item.tag != .never { continue }
+                byGroup[p.rule.group, default: []].append(item)
             }
-            .filter { $0.bytes > 0 }
-            .sorted { $0.bytes > $1.bytes }
 
-            let item = ScanItem(
-                title: p.rule.title,
-                note: p.rule.note,
-                url: p.url,
-                tag: p.rule.tag,
-                bytes: childItems.isEmpty ? (measured[p.url.path] ?? 0) : 0,
-                children: childItems
-            )
-
-            // Empty non-protected entries are just noise.
-            if item.totalBytes == 0 && item.tag != .never { continue }
-            byGroup[p.rule.group, default: []].append(item)
+            return Catalog.groupOrder.compactMap { name in
+                guard var items = byGroup[name], !items.isEmpty else { return nil }
+                items.sort { lhs, rhs in
+                    if lhs.tag != rhs.tag { return lhs.tag < rhs.tag }
+                    return lhs.totalBytes > rhs.totalBytes
+                }
+                return ScanGroup(name: name, items: items)
+            }
         }
 
-        return Catalog.groupOrder.compactMap { name in
-            guard var items = byGroup[name], !items.isEmpty else { return nil }
-            items.sort { lhs, rhs in
-                if lhs.tag != rhs.tag { return lhs.tag < rhs.tag }
-                return lhs.totalBytes > rhs.totalBytes
+        guard !toMeasure.isEmpty else { return assemble([:]) }
+
+        // Measure concurrently, handing the caller a fresh assembly every so
+        // often. Rows appear as their directories finish instead of after all.
+        var measured: [String: Int64] = [:]
+        var done = 0
+        var lastEmit = DispatchTime.now()
+        let lock = NSLock()
+        let total = toMeasure.count
+
+        DispatchQueue.concurrentPerform(iterations: total) { i in
+            guard cancel?.isCancelled != true else { return }
+            let bytes = walkSize(toMeasure[i], cancel: cancel)
+            var snapshot: [String: Int64]?
+            var count = 0
+            lock.lock()
+            measured[toMeasure[i].path] = bytes
+            done += 1
+            count = done
+            if onProgress != nil, done < total {
+                let now = DispatchTime.now()
+                if now.uptimeNanoseconds - lastEmit.uptimeNanoseconds > 250_000_000 {
+                    lastEmit = now
+                    snapshot = measured
+                }
             }
-            return ScanGroup(name: name, items: items)
+            lock.unlock()
+            if let snapshot, cancel?.isCancelled != true {
+                onProgress?(assemble(snapshot), count, total)
+            }
         }
+        return assemble(measured)
+    }
+
+    /// "com.spotify.client" means nothing to most people. When a cache folder is
+    /// named by bundle identifier and that app is installed, show the app's name
+    /// and keep the identifier as the row's note. Internal so the test suite can
+    /// pin its behaviour — the confirm sheet leads with what this returns.
+    static func friendlyChild(_ url: URL) -> (title: String, note: String) {
+        let raw = url.lastPathComponent
+        #if canImport(AppKit)
+        if raw.contains("."), !raw.hasPrefix("."),
+           let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: raw) {
+            let name = app.deletingPathExtension().lastPathComponent
+            if !name.isEmpty, name.lowercased() != raw.lowercased() {
+                return (name, raw)
+            }
+        }
+        #endif
+        return (raw, "")
     }
 
     // MARK: - Project artifact scan
@@ -423,13 +448,15 @@ enum Scanner {
     /// Called with `$HOME` as the root: skipping `~/Library` and friends makes the
     /// whole walk take about a second, which is cheaper than asking the user where
     /// their code lives. `excluding` holds the paths they have asked it to skip.
-    static func scanProjects(roots: [URL], excluding: Set<String> = [], maxDepth: Int = 7) -> ScanGroup? {
+    static func scanProjects(roots: [URL], excluding: Set<String> = [], maxDepth: Int = 7,
+                             cancel: CancelFlag? = nil) -> ScanGroup? {
         let fm = FileManager.default
         let byName = Dictionary(grouping: Catalog.projectArtifacts, by: \.name)
 
         var hits: [(url: URL, artifact: ProjectArtifact)] = []
 
         func walk(_ dir: URL, depth: Int) {
+            guard cancel?.isCancelled != true else { return }
             guard depth <= maxDepth, hits.count < 800 else { return }
             guard let entries = try? fm.contentsOfDirectory(
                 at: dir,
@@ -461,9 +488,9 @@ enum Scanner {
         }
 
         for root in roots { walk(root, depth: 1) }
-        guard !hits.isEmpty else { return nil }
+        guard !hits.isEmpty, cancel?.isCancelled != true else { return nil }
 
-        let measured = sizes(of: hits.map(\.url))
+        let measured = sizes(of: hits.map(\.url), cancel: cancel)
         let items = hits.map { hit -> ScanItem in
             let parent = hit.url.deletingLastPathComponent()
             let where_ = parent.path.replacingOccurrences(of: SafetyGuard.home.path, with: "~")
@@ -490,10 +517,13 @@ enum Scanner {
     struct DeleteReport {
         var freed: Int64 = 0
         var moved: Int = 0
-        /// The original locations of everything that went to the Trash, so the
-        /// model can drop exactly those rows without re-scanning the world.
-        var movedURLs: [URL] = []
+        /// Where each item was, and where it landed in the Trash — enough to
+        /// drop exactly those rows without a rescan, and to put them all back.
+        var moves: [(original: URL, trashed: URL)] = []
         var failures: [(url: URL, reason: String)] = []
+
+        /// The original locations of everything that went to the Trash.
+        var movedURLs: [URL] { moves.map(\.original) }
     }
 
     /// Moves items to the Trash. Nothing here calls `removeItem`.
@@ -510,15 +540,44 @@ enum Scanner {
             guard fm.fileExists(atPath: item.url.path) else { continue }
 
             do {
-                try fm.trashItem(at: item.url, resultingItemURL: nil)
+                var landed: NSURL?
+                try fm.trashItem(at: item.url, resultingItemURL: &landed)
                 report.freed += item.bytes
                 report.moved += 1
-                report.movedURLs.append(item.url)
+                // If the system won't say where it landed (it always does), the
+                // row is still removed; only Put Back skips that item.
+                report.moves.append((item.url, (landed as URL?) ?? item.url))
             } catch {
                 report.failures.append((item.url, error.localizedDescription))
             }
         }
         return report
+    }
+
+    /// Puts everything a report sent to the Trash back where it came from — the
+    /// one undo DevSweep offers. Each destination is re-checked: it must be
+    /// inside $HOME and must not exist again (a cache the tool already rebuilt
+    /// is never overwritten). Anything that can't go back is skipped, not forced.
+    static func restore(_ report: DeleteReport) -> (restored: Int, skipped: Int) {
+        let fm = FileManager.default
+        var restored = 0
+        var skipped = 0
+
+        for move in report.moves {
+            let dest = move.original.standardizedFileURL
+            guard dest.path.hasPrefix(SafetyGuard.home.path + "/"),
+                  fm.fileExists(atPath: move.trashed.path),
+                  !fm.fileExists(atPath: dest.path)
+            else { skipped += 1; continue }
+
+            do {
+                try fm.moveItem(at: move.trashed, to: dest)
+                restored += 1
+            } catch {
+                skipped += 1
+            }
+        }
+        return (restored, skipped)
     }
 
     // MARK: - Prune tools

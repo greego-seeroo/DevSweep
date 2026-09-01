@@ -2,47 +2,38 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key>
-	<string>DevSweep</string>
 	<key>CFBundleDisplayName</key>
 	<string>DevSweep</string>
 	<key>CFBundleExecutable</key>
 	<string>DevSweep</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.greego.devesweep</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.greego.devesweep</string>
+	<key>CFBundleName</key>
+	<string>DevSweep</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>1.1.0</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>14.0</string>
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.utilities</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>NSHumanReadableCopyright</key>
-	<string>Local build. No network access, no telemetry.</string>
-
-	<!-- Export compliance: DevSweep implements no encryption and makes no network
-	     calls, so it qualifies for the exemption. This key answers App Store
-	     Connect's encryption question automatically for every build. -->
+	<string>4</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-
-	<!-- Shown in the system's permission prompts. Without these the prompt gives no
-	     reason at all, which is exactly when people click Don't Allow. DevSweep only
-	     reads these folders to find build output next to a project marker; it never
-	     opens your files, and anything it removes goes to the Trash. -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>DevSweep looks for regenerable build output (node_modules, target, build…) in projects you keep on your Desktop. It reads folder names and sizes only, and never opens your files.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
 	<string>DevSweep looks for regenerable build output (node_modules, target, build…) in projects you keep in Documents. It reads folder names and sizes only, and never opens your files.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>DevSweep looks for regenerable build output (node_modules, target, build…) in projects you keep in Downloads. It reads folder names and sizes only, and never opens your files.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Local build. No network access, no telemetry.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>DevSweep only needs this if you keep projects on an external drive. It reads folder names and sizes only.</string>
 </dict>

@@ -174,8 +174,8 @@ private struct WelcomePage {
 
     static func all(sandboxed: Bool) -> [WelcomePage] {
         let firstStep: (title: String, detail: String) = sandboxed
-            ? ("Grant a folder",
-               "DevSweep is sandboxed for the App Store, so it only looks where you allow. Choose your **Home folder** to cover every cache.")
+            ? ("Grant your Home folder",
+               "DevSweep is sandboxed for the App Store, so it only looks where you allow. In the picker, select the folder with the **house icon and your username** — that one grant covers every cache. Granting a smaller folder works too, but the results stay partial.")
             : ("Scan your Mac",
                "DevSweep walks your home folder and measures what each tool left behind — it takes about a second.")
 
@@ -189,6 +189,11 @@ private struct WelcomePage {
                 icon: "internaldrive.fill",
                 title: "It knows where to look",
                 story: "Xcode's DerivedData. The npm and Gradle caches. Docker layers, Rust `target` folders, Python virtualenvs, simulator runtimes. DevSweep understands **dozens of developer tools** and finds the space they have tucked into corners of your home folder you never open."
+            ),
+            WelcomePage(
+                icon: "switch.2",
+                title: "Two sweeps in one",
+                story: "**Developer** digs through toolchains and build output — the sawdust above.\n\n**System Data** is for everyone: app caches, old logs and forgotten iPhone backups — the mystery bulk that Settings lumps under “System Data”.\n\nSwitch between them any time with the tabs at the top."
             ),
             WelcomePage(
                 icon: "checkmark.shield.fill",
