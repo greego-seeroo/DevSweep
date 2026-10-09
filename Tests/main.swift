@@ -569,6 +569,16 @@ if CommandLine.arguments.contains("--live") {
     }
     check(edNested.isEmpty, "no System Data row contains another \(edNested.prefix(3))")
 
+    let edFileLeaves = edLeaves.filter {
+        var isDir: ObjCBool = false
+        return fm.fileExists(atPath: $0.url.path, isDirectory: &isDir) && !isDir.boolValue
+    }
+    check(edFileLeaves.isEmpty, "no loose files offered in System Data \(edFileLeaves.map(\.url.lastPathComponent))")
+
+    var edSeen = Set<String>()
+    let edDupRows = edPaths.filter { !edSeen.insert($0).inserted }
+    check(edDupRows.isEmpty, "no System Data row appears twice \(edDupRows.prefix(3))")
+
     // Streaming: partial assemblies arrive, and the final result is complete.
     // The callback fires from worker threads, so collect under a lock and
     // check afterwards.
@@ -582,6 +592,7 @@ if CommandLine.arguments.contains("--live") {
         emitLock.unlock()
     })
     check(!streamed.isEmpty, "streaming scan returns the full result")
+    check(emissions > 0, "partial results are emitted during measuring")
     check(!overshoot, "progress counter never overshoots")
     print("  info streaming emitted \(emissions) partial update\(emissions == 1 ? "" : "s")")
 }
