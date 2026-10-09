@@ -371,7 +371,7 @@ final class ScanModel: ObservableObject {
     private var lastTrashMtime: Date?
 
     private nonisolated static func trashMtime() -> Date? {
-        let path = SafetyGuard.home.appendingPathComponent(".Trash").path
+        let path = SafetyGuard.trash.path
         return (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
     }
 
@@ -385,7 +385,7 @@ final class ScanModel: ObservableObject {
     /// even while DevSweep stays frontmost — app activation alone would miss it.
     /// Fails silently where the Trash is unreachable (sandbox without a grant).
     private func watchTrash() {
-        let path = SafetyGuard.home.appendingPathComponent(".Trash").path
+        let path = SafetyGuard.trash.path
         let fd = open(path, O_EVTONLY)
         guard fd >= 0 else { return }
         let source = DispatchSource.makeFileSystemObjectSource(

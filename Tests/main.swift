@@ -24,7 +24,8 @@ func h(_ p: String) -> URL { home.appendingPathComponent(p) }
 
 // Every fixture lives under one uniquely-named directory in $HOME (the guard
 // refuses anything outside $HOME, so fixtures elsewhere would pass vacuously).
-// It is removed at the end, and the name is impossible to collide with.
+// It is removed by removeFixtures() at the end — not by a `defer`, which never runs when the
+// script ends in exit(). Leftovers from runs that crashed are swept as well.
 let fixtureRoot = h(".devsweep-tests-\(ProcessInfo.processInfo.processIdentifier)")
 
 func fixture(_ p: String, bytes: Int = 4096) {
@@ -37,7 +38,15 @@ func fixtureDir(_ p: String) {
     try? fm.createDirectory(at: fixtureRoot.appendingPathComponent(p), withIntermediateDirectories: true)
 }
 
-defer { try? fm.removeItem(at: fixtureRoot) }
+func removeFixtures() {
+    try? fm.removeItem(at: fixtureRoot)
+    // Sweep fixture roots left behind by earlier runs (the prefix is unique to
+    // this suite and the pid suffix means they are never anything else).
+    let names = (try? fm.contentsOfDirectory(atPath: home.path)) ?? []
+    for name in names where name.hasPrefix(".devsweep-tests-") {
+        try? fm.removeItem(at: home.appendingPathComponent(name))
+    }
+}
 
 // MARK: - 1. The guard: what may never move
 
@@ -578,6 +587,10 @@ if CommandLine.arguments.contains("--live") {
 }
 
 // MARK: - Summary
+
+section("Cleanup")
+removeFixtures()
+check(!fm.fileExists(atPath: fixtureRoot.path), "fixture directory removed from $HOME")
 
 print("\n\(passes) passed, \(failures) failed\n")
 exit(failures == 0 ? 0 : 1)

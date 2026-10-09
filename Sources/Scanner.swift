@@ -5,7 +5,7 @@ import AppKit
 
 // MARK: - Shell
 
-/// Runs short-lived helper commands (`du`, `go env`, `docker system df`). Everything
+/// Runs short-lived helper commands (`go env`, `docker system df`, `brew cleanup -n`). Everything
 /// here is read-only or explicitly requested by the user; nothing shells out to
 /// delete a file — that is `FileManager.trashItem`'s job alone.
 enum Shell {
@@ -275,7 +275,7 @@ enum Scanner {
     /// How much is sitting in the Trash. Moving something there does not free a
     /// single byte, so the UI has to be able to say what is still waiting.
     static func trashSize() -> Int64 {
-        let trash = SafetyGuard.home.appendingPathComponent(".Trash")
+        let trash = SafetyGuard.trash
         guard FileManager.default.fileExists(atPath: trash.path) else { return 0 }
         return sizes(of: [trash])[trash.path] ?? 0
     }
@@ -445,9 +445,10 @@ enum Scanner {
     /// folder that happens to be called `build` — or a Unity project's `Library` —
     /// is judged on evidence, not on its name.
     ///
-    /// Called with `$HOME` as the root: skipping `~/Library` and friends makes the
-    /// whole walk take about a second, which is cheaper than asking the user where
-    /// their code lives. `excluding` holds the paths they have asked it to skip.
+    /// Called with the granted folders as roots (`$HOME`, normally): skipping
+    /// `~/Library` and friends, stopping at depth 7 and at 800 hits keeps the walk
+    /// to a few seconds, which is cheaper than asking the user where their code
+    /// lives. `excluding` holds the paths they have asked it to skip.
     static func scanProjects(roots: [URL], excluding: Set<String> = [], maxDepth: Int = 7,
                              cancel: CancelFlag? = nil) -> ScanGroup? {
         let fm = FileManager.default

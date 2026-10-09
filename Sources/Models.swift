@@ -105,6 +105,12 @@ enum SafetyGuard {
         SandboxAccess.realHome
     }
 
+    /// The user's real Trash. Never derive this from `homeDirectoryForCurrentUser`:
+    /// under the App Sandbox that is the container, which has no .Trash at all.
+    static var trash: URL {
+        home.appendingPathComponent(".Trash")
+    }
+
     /// Directories that may never be deleted themselves. Their children still can be.
     /// Every container that holds a mix of cache and non-cache belongs here: the
     /// catalog may offer what is inside, never the box itself.

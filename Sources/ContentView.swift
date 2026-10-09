@@ -210,9 +210,7 @@ struct ContentView: View {
                 }
                 Divider()
                 Button("Open Trash") {
-                    NSWorkspace.shared.open(
-                        FileManager.default.homeDirectoryForCurrentUser
-                            .appendingPathComponent(".Trash"))
+                    NSWorkspace.shared.open(SafetyGuard.trash)
                 }
             } label: {
                 Label("Tools", systemImage: "ellipsis.circle")
@@ -396,9 +394,7 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Open Trash") {
-                    NSWorkspace.shared.open(
-                        FileManager.default.homeDirectoryForCurrentUser
-                            .appendingPathComponent(".Trash"))
+                    NSWorkspace.shared.open(SafetyGuard.trash)
                 }
                 .buttonStyle(.link)
                 .font(.caption)
@@ -961,8 +957,7 @@ private struct ReportBanner: View {
                     .help("Restores every item from this cleanup to where it came from.")
             }
             Button("Open Trash") {
-                NSWorkspace.shared.open(
-                    FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"))
+                NSWorkspace.shared.open(SafetyGuard.trash)
             }
             .buttonStyle(.link)
             Button(action: dismiss) {

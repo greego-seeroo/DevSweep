@@ -33,7 +33,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Local build. No network access, no telemetry.</string>
+	<string>No network access, no telemetry.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>DevSweep only needs this if you keep projects on an external drive. It reads folder names and sizes only.</string>
 </dict>

@@ -40,7 +40,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var frame = window.frame
             let size = NSSize(width: min(1180, visible.width),
                               height: min(800, visible.height))
-            frame.origin.y += frame.height - size.height   // grow downward, not up
             frame.size = size
             window.setFrame(frame, display: true)
             window.center()

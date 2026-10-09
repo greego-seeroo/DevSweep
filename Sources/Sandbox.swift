@@ -127,7 +127,7 @@ enum SandboxAccess {
         roots = dedupe(roots + [url])
     }
 
-    /// Drops a grant. The bookmark is forgotten; access ends at the next launch.
+    /// Drops a grant. The bookmark is forgotten and access stops immediately.
     static func removeGrant(_ url: URL) {
         var datas = UserDefaults.standard.array(forKey: defaultsKey) as? [Data] ?? []
         datas.removeAll { bookmarkPath($0) == url.standardizedFileURL.path }
