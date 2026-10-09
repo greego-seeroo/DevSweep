@@ -1,6 +1,6 @@
 import Foundation
 
-// DevSweep's test suite. Run with ./test.sh, or ./test.sh --live to add the
+// DevSweep's test suite. Run with Scripts/test.sh, or Scripts/test.sh --live to add the
 // slower checks that scan this machine's real caches.
 //
 // The suite is organised around the one question that matters for a tool that

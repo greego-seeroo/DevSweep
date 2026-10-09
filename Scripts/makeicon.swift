@@ -1,5 +1,5 @@
 // Generates AppIcon.icns without needing an asset catalog.
-// Run via: swift Tools/makeicon.swift <output.icns>
+// Run via: swift Scripts/makeicon.swift <output.icns>
 import AppKit
 
 let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "AppIcon.icns"

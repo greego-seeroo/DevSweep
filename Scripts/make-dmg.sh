@@ -1,15 +1,15 @@
 #!/bin/bash
 # Packages DevSweep.app into a double-clickable DevSweep.dmg.
-# Run ./build.sh first (or let this script do it).
+# Run Scripts/build.sh first (or let this script do it).
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."   # repository root
 
 APP="DevSweep.app"
 VOL="DevSweep"
 DMG="DevSweep.dmg"
 STAGE=".dmg-stage"
 
-[ -d "$APP" ] || { echo "› $APP missing, building it first"; ./build.sh; }
+[ -d "$APP" ] || { echo "› $APP missing, building it first"; Scripts/build.sh; }
 
 echo "› staging"
 rm -rf "$STAGE" "$DMG"

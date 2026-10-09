@@ -8,7 +8,7 @@
 
 /* Begin PBXFileReference section */
 		D50000000000000000000004 /* DevSweep.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DevSweep.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		D50000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		D50000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Resources/Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -118,7 +118,7 @@
 			files = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/Tools/makeicon.swift",
+				"$(SRCROOT)/Scripts/makeicon.swift",
 			);
 			name = "Generate App Icon";
 			outputPaths = (
@@ -126,7 +126,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "swift \"$SRCROOT/Tools/makeicon.swift\" \"$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AppIcon.icns\"\n";
+			shellScript = "swift \"$SRCROOT/Scripts/makeicon.swift\" \"$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AppIcon.icns\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -174,7 +174,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CODE_SIGN_ENTITLEMENTS = DevSweep.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Resources/DevSweep.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -183,7 +183,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_FILE = Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Dev Sweep";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -200,7 +200,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CODE_SIGN_ENTITLEMENTS = DevSweep.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Resources/DevSweep.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -209,7 +209,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_FILE = Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Dev Sweep";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -2,7 +2,7 @@
 # Builds DevSweep.app from source with swiftc. No dependencies; the Xcode project
 # is only consulted for the version, build number and signing team.
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."   # repository root
 
 APP="DevSweep.app"
 BIN="$APP/Contents/MacOS/DevSweep"
@@ -11,9 +11,9 @@ RES="$APP/Contents/Resources"
 echo "› cleaning"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$RES"
-cp Info.plist "$APP/Contents/Info.plist"
+cp Resources/Info.plist "$APP/Contents/Info.plist"
 
-# Info.plist references $(MARKETING_VERSION)/$(CURRENT_PROJECT_VERSION) so the
+# Resources/Info.plist references $(MARKETING_VERSION)/$(CURRENT_PROJECT_VERSION) so the
 # version typed into Xcode is the single source of truth. Xcode substitutes
 # them during its build; this script has to do the same by hand.
 MV="$(sed -n 's/.*MARKETING_VERSION = \(.*\);/\1/p' DevSweep.xcodeproj/project.pbxproj | head -1)"
@@ -34,11 +34,11 @@ swiftc \
   -sdk "$SDK" \
   -target "${ARCH}-apple-macos14.0" \
   -framework SwiftUI -framework AppKit \
-  Sources/*.swift \
+  Sources/Core/*.swift Sources/App/*.swift \
   -o "$BIN"
 
 echo "› icon"
-swift Tools/makeicon.swift "$RES/AppIcon.icns" >/dev/null 2>&1 || echo "  (skipped)"
+swift Scripts/makeicon.swift "$RES/AppIcon.icns" >/dev/null 2>&1 || echo "  (skipped)"
 
 # macOS keys a privacy grant to the app's code signature. An ad-hoc signature gets
 # a fresh hash on every compile, so the system sees a brand new app each build and
@@ -51,7 +51,7 @@ swift Tools/makeicon.swift "$RES/AppIcon.icns" >/dev/null 2>&1 || echo "  (skipp
 # Apple Development certificates for several teams; pick the one whose
 # organizational unit is this team, never just the first one listed.
 #
-# Override with:  SIGN_ID="Apple Development: you (CERTID)" ./build.sh
+# Override with:  SIGN_ID="Apple Development: you (CERTID)" Scripts/build.sh
 SIGN_ID="${SIGN_ID:-}"
 TEAM="$(sed -n 's/.*DEVELOPMENT_TEAM = \([A-Z0-9]*\);/\1/p' DevSweep.xcodeproj/project.pbxproj | head -1)"
 if [[ -z "${SIGN_ID:-}" && -n "$TEAM" ]]; then
@@ -70,12 +70,12 @@ if [[ -z "${SIGN_ID:-}" && -n "$TEAM" ]]; then
 fi
 
 # The App Store build runs sandboxed. Embedding the entitlements here means a
-# local ./build.sh produces the same sandboxed app the archive will, so folder
+# a local Scripts/build.sh produces the same sandboxed app the archive will, so folder
 # grants and their limits can be tested without going through Xcode.
 ENT_ARGS=()
-if [[ -f DevSweep.entitlements ]]; then
-  echo "› entitlements (DevSweep.entitlements — App Sandbox)"
-  ENT_ARGS=(--entitlements DevSweep.entitlements)
+if [[ -f Resources/DevSweep.entitlements ]]; then
+  echo "› entitlements (Resources/DevSweep.entitlements — App Sandbox)"
+  ENT_ARGS=(--entitlements Resources/DevSweep.entitlements)
 fi
 
 if [[ -n "$SIGN_ID" ]]; then
