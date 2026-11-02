@@ -108,6 +108,13 @@ If you don't want to think about any of this, press the big button twice: the
 first press selects everything Safe, the second shows you the list it is about
 to move. Confirm, and it all goes to the Trash.
 
+You never have to wait for a scan to finish. Rows appear as their folders are
+measured, and any row on screen can be ticked and moved to the Trash while the
+rest of the scan is still running: the guard re-checks every path at the moment
+it moves, and a folder that goes to the Trash mid-measurement is simply dropped
+from the results. Once only a few folders are left, the status line names them
+— "still measuring CocoaPods spec repos" — so a long wait is never a mystery.
+
 Notable **Review** calls, and why they aren't Safe:
 
 - **Xcode Archives** hold the dSYMs for builds you shipped. Delete them and you
@@ -139,8 +146,8 @@ item whose original location has since been recreated (a tool rebuilt the
 directory) so nothing is ever overwritten. Items it skips stay in the Trash.
 
 Put Back covers the most recent cleanup only, and the record of it lives in
-memory: a rescan, a mode switch or quitting the app forgets it. Finder's own
-*Put Back* still works on every item regardless.
+memory: it survives rescans and mode switches, but quitting the app forgets it.
+Finder's own *Put Back* still works on every item regardless.
 
 ## Prune tools
 
@@ -271,7 +278,10 @@ your files:
   is absolute or traverses upward, every rule passes the guard, and in System
   Data mode only Logs may be tagged Safe.
 - The sizer, cancellation, disk-space reads, size parsing, in-place row removal,
-  the auto-switch rule and friendly app names each have their own section.
+  the auto-switch rule and friendly app names each have their own section. The
+  sharded sizer is checked against the single walk and against `du`, its
+  progress callbacks for consistency, a walk whose folder is trashed half-way
+  for surviving it, and streamed rows for merging into the list correctly.
 - A real round-trip: a fixture directory is moved via the same code path the
   app uses, verified to land in the Trash, put back with its contents intact,
   then cleaned up. An end-to-end "user journey" does scan → clean → Put Back →
@@ -280,10 +290,15 @@ your files:
   offered row passes the guard, none is a loose file, no row contains or
   duplicates another, and streamed progress never overshoots.
 
-151 checks without `--live`, currently all green. The suite is a plain Swift
-script with no XCTest; it compiles `Sources/Core` only. The view model, the UI, the welcome sheet and real sandbox behaviour are
-covered by the manual checklist in [TESTING.md](TESTING.md). Run the suite after
-any change to `Sources/Core`.
+168 checks without `--live`, currently all green. The suite is a plain Swift
+script with no XCTest; it compiles `Sources/Core` only. `--live` adds the
+real-machine scans and a second program, `Tests/Model`, that compiles the view
+model with the core and drives it headlessly: it moves a fixture row to the
+Trash while a real scan is still measuring and checks the row stays gone, the
+undo survives a rescan, and Put Back restores it. The UI, the welcome sheet and
+real sandbox behaviour are covered by the manual checklist in
+[TESTING.md](TESTING.md). Run the suite after any change to `Sources/Core` or
+`ScanModel.swift`.
 
 ## Layout
 
@@ -320,7 +335,10 @@ guard will not act on a name it has not been told about, even if the catalog ask
 - Sizes are allocated blocks on your boot volume, measured in-process with
   `fts(3)` (no `du` subprocess, which the sandbox would not allow). This is what
   you get back, and it can differ slightly from Finder's numbers. Hard-linked
-  files are counted once per link.
+  files are counted once per link. Each folder is split into a few dozen
+  parallel walks, so a single tree of millions of small files (a CocoaPods spec
+  repo, simulator devices) uses every core instead of holding the whole scan
+  up; the totals are identical to a single walk, and to `du`.
 - The Go module cache is offered as a whole and never expanded: its files are
   read-only, and an individual module cannot be moved out from under them.
 - `__pycache__` is deliberately not listed. There are hundreds of them and they

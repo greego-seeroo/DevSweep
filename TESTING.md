@@ -20,6 +20,9 @@ sweeps any left behind by an earlier crashed run.
 | 4 | Catalog integrity | Every rule's group is ordered, no duplicate/absolute/traversing paths, every non-Protected rule passes the guard |
 | 5 | Everyday catalog integrity | Group order, clean home-relative paths and the guard checks for the System Data rules; only Logs is tagged Safe (app caches and device backups can never be mass-selected); the two catalogs never bleed into each other |
 | 6 | Sizing (fts walker) | All files counted; **files inside `.app` bundles counted** (regression: the old walker skipped them); symlinks not followed; totals in the right ballpark |
+| 6b | Sharded sizing | The parallel, sharded walk equals the single walk and `du -sk -x` byte for byte on a deep fixture with loose files, a symlink and an empty folder; progress callbacks report consistent done/known/pending; a folder trashed mid-walk neither hangs nor corrupts the other folder's total |
+| 6c | Merging streamed rows | Remeasured rows replace their old versions in place, unreached rows keep their old size, new rows and groups are appended; a row trashed mid-scan never comes back from a partial |
+| 6d | Measuring status | The status line is a plain count until the last three folders, then names them |
 | 7 | Cancellation | A cancelled sizing run measures nothing; a cancelled project scan returns nothing; an uncancelled flag changes nothing |
 | 8 | Disk space | Reads succeed repeatedly (regression: the cached-URL bug returned the first reading forever); free ≤ total |
 | 9 | Size parsing | docker/brew/nix output parsed; hex digests, version numbers and bare counts are not sizes |
@@ -33,6 +36,7 @@ sweeps any left behind by an earlier crashed run.
 | 13 | Live System Data scan | Same guarantees as row 12 for Everyday mode; only everyday groups appear |
 | 14 | Live streaming | Partial results are emitted during measuring; progress counter never overshoots; final result complete |
 | 15 | Cleanup | The fixture directory is gone from `$HOME` |
+| 16 | Live view model | `Tests/Model/main.swift`, compiled with `ScanModel`: a fixture row under `~/.cache` streams in while the real scan is measuring, is ticked and moved to the Trash mid-scan, leaves the list at once, stays gone when the scan finishes, keeps its Put Back across a rescan, and comes back with its contents on Put Back |
 
 ## Manual checklist — walk before release
 
@@ -57,8 +61,11 @@ sweeps any left behind by an earlier crashed run.
 
 ### D. Scanning & progress
 - [ ] First scan: rows appear progressively with "Measuring caches… N of M" — no long blank wait.
-- [ ] Rescan keeps the previous list visible until the new one is ready (no flicker to empty).
-- [ ] While scanning: Rescan, the Folders menu, the Tools menu, and the main clean button are disabled; the tabs stay clickable.
+- [ ] When three or fewer folders remain, the status names them ("still measuring CocoaPods spec repos").
+- [ ] Rescan keeps the previous list visible; rows update in place as the new scan reaches them, and nothing flickers to empty.
+- [ ] While scanning: Rescan and the Folders menu are disabled; the tabs, the Tools menu (except the prune tools), the checkboxes and the main clean button all stay usable.
+- [ ] **Clean during a scan:** tick rows while "Measuring caches…" is showing and move them to the Trash. They go, the banner appears, and they do not reappear when the scan finishes. While the move runs, the status line shows "Moving N items…" and the main button is disabled; afterwards the scan status comes back.
+- [ ] On a machine with a CocoaPods master spec repo or a large simulator set, the whole Developer scan finishes in well under a minute (62 s → 25 s on the reference machine).
 - [ ] A rescan requested mid-scan is not lost: press Cmd-R, switch tabs, or click Add Home Folder on the banner while a scan is running, and a follow-up rescan runs automatically when the current one ends. (Exclude and Remove grant cannot be reached mid-scan; their menus are disabled.)
 
 ### E. Cleaning flow
@@ -66,6 +73,7 @@ sweeps any left behind by an earlier crashed run.
 - [ ] Confirm sheet rows lead with the friendly name ("Spotify", "web-app › node_modules") with the raw path as small print beneath.
 - [ ] After moving to Trash: the moved rows disappear without a rescan, the banner reports the count, disk gauge updates.
 - [ ] **Put Back** on the banner restores every item of the last cleanup to its original place, the rows reappear after the automatic rescan, and the Trash no longer holds them.
+- [ ] Put Back is still offered after a Rescan or a mode switch (the record is only lost on quit). While a scan or move is running the button is disabled, not silently ignored.
 - [ ] Put Back when a tool already rebuilt one of the directories: that item is skipped (stays in the Trash) and the rest restore. (The "N could not go back" status is overwritten by the automatic rescan before it can be seen — known gap.)
 - [ ] Restore something from the Trash by hand in Finder, click Rescan: it reappears.
 - [ ] Protected rows always show a lock and can never be ticked, in both modes.

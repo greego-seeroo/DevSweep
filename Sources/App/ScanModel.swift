@@ -4,8 +4,14 @@ import SwiftUI
 @MainActor
 final class ScanModel: ObservableObject {
     @Published var groups: [ScanGroup] = []
+    /// A scan is measuring. The list keeps working while it runs: rows can be
+    /// ticked and moved to the Trash the moment they appear.
     @Published var scanning = false
+    /// Something is being moved — to the Trash, back out of it, or by a prune
+    /// tool. One such job at a time; scans run alongside.
+    @Published var cleaning = false
     @Published var status = "Ready."
+    @Published var cleaningStatus: String?
     /// Sandbox build only: true when no folder has been granted yet, so the UI
     /// shows the "grant access" screen instead of an empty result.
     @Published var needsAccess = false
@@ -175,6 +181,10 @@ final class ScanModel: ObservableObject {
     /// A rescan asked for while one is already running (folder excluded, grant
     /// removed mid-scan) must not be silently dropped — it runs right after.
     private var rescanQueued = false
+    /// Paths moved to the Trash while a scan was in flight. The scan measured
+    /// them before they moved, so its results must leave them out.
+    private var removedDuringScan: Set<String> = []
+
 
     /// Cancels the scan currently in flight. A fresh flag is made per scan.
     private var scanCancel: CancelFlag?
@@ -192,12 +202,12 @@ final class ScanModel: ObservableObject {
 
         scanning = true
         status = "Measuring caches…"
-        lastReport = nil
+        removedDuringScan = []
         let skip = Set(excluded.map(\.standardizedFileURL.path))
         let audience = self.audience
-        // Streaming partial results only helps when there is nothing on screen
-        // yet; a rescan keeps the previous list visible until the new one is done.
-        let streamPartials = groups.isEmpty
+        // A first scan streams into the empty list; a rescan keeps the old list
+        // on screen and swaps rows in as the new scan finishes them.
+        let firstScan = groups.isEmpty
         // Outside the sandbox the whole home is walked; inside, the granted roots
         // normalised so an ancestor grant still starts at the home folder.
         let projectRoots = SandboxAccess.projectRoots
@@ -210,11 +220,14 @@ final class ScanModel: ObservableObject {
 
         Task.detached(priority: .userInitiated) {
             var result = runCatalog
-                ? Scanner.scanCatalog(audience: audience, cancel: cancel, onProgress: { partial, done, total in
+                ? Scanner.scanCatalog(audience: audience, cancel: cancel, onProgress: { partial, done, total, waiting in
                     Task { @MainActor in
                         guard self.scanning, !cancel.isCancelled else { return }
-                        self.status = "Measuring caches… \(done) of \(total)"
-                        if streamPartials { self.groups = partial }
+                        self.status = ScanStatus.measuring(done: done, total: total, waiting: waiting)
+                        // Rows trashed while this scan ran were measured before
+                        // they moved; never let a partial bring them back.
+                        let fresh = partial.removing(paths: self.removedDuringScan)
+                        self.groups = firstScan ? fresh : self.groups.merging(fresh)
                     }
                 })
                 : []
@@ -242,6 +255,7 @@ final class ScanModel: ObservableObject {
             let scanned = result
             await MainActor.run {
                 if !cancel.isCancelled {
+                    let scanned = scanned.removing(paths: self.removedDuringScan)
                     let stillValid = Set(scanned.flatMap(\.items).flatMap(\.deletableLeaves).map(\.id))
                     self.selected.formIntersection(stillValid)
                     self.groups = scanned
@@ -278,11 +292,15 @@ final class ScanModel: ObservableObject {
 
     // MARK: - Actions
 
+    /// Moves the selection to the Trash. Allowed while a scan is running: the
+    /// guard re-checks every path at the moment it moves, and a directory that
+    /// is being measured as it goes simply yields a partial size the scan then
+    /// discards (see `removedDuringScan`).
     func trashSelected() {
         let items = selectedItems
-        guard !items.isEmpty else { return }
-        scanning = true
-        status = "Moving \(items.count) item\(items.count == 1 ? "" : "s") to the Trash…"
+        guard !items.isEmpty, !cleaning else { return }
+        cleaning = true
+        cleaningStatus = "Moving \(items.count) item\(items.count == 1 ? "" : "s") to the Trash…"
 
         Task.detached(priority: .userInitiated) {
             let report = Scanner.trash(items)
@@ -291,16 +309,17 @@ final class ScanModel: ObservableObject {
             let space = DiskSpace.current()
             let trash = Scanner.trashSize()
             await MainActor.run {
+                let moved = Set(report.movedURLs.map(\.path))
                 self.lastReport = report
-                self.remove(paths: Set(report.movedURLs.map(\.path)))
+                self.remove(paths: moved)
+                if self.scanning { self.removedDuringScan.formUnion(moved) }
                 self.disk = space
                 self.trashBytes = trash
                 self.lastTrashMtime = Self.trashMtime()
-                self.scanning = false
-                self.status = "Moved \(report.moved) item\(report.moved == 1 ? "" : "s") to the Trash."
-                if self.rescanQueued {
-                    self.rescanQueued = false
-                    self.rescan()
+                self.cleaning = false
+                self.cleaningStatus = nil
+                if !self.scanning {
+                    self.status = "Moved \(report.moved) item\(report.moved == 1 ? "" : "s") to the Trash."
                 }
             }
         }
@@ -309,15 +328,16 @@ final class ScanModel: ObservableObject {
     /// Puts everything from the last "Move to Trash" back where it was — the one
     /// undo DevSweep offers. Rescans afterwards so the rows reappear.
     func undoLastClean() {
-        guard let report = lastReport, !report.moves.isEmpty, !scanning else { return }
+        guard let report = lastReport, !report.moves.isEmpty, !scanning, !cleaning else { return }
         lastReport = nil
-        scanning = true
-        status = "Putting \(report.moved) item\(report.moved == 1 ? "" : "s") back…"
+        cleaning = true
+        cleaningStatus = "Putting \(report.moved) item\(report.moved == 1 ? "" : "s") back…"
 
         Task.detached(priority: .userInitiated) {
             let result = Scanner.restore(report)
             await MainActor.run {
-                self.scanning = false
+                self.cleaning = false
+                self.cleaningStatus = nil
                 self.status = result.skipped == 0
                     ? "Put back \(result.restored) item\(result.restored == 1 ? "" : "s")."
                     : "Put back \(result.restored) — \(result.skipped) could not go back."
@@ -341,7 +361,7 @@ final class ScanModel: ObservableObject {
     /// Runs even with an empty list: the disk gauge and Trash footer still need
     /// fresh numbers after everything was cleaned.
     func refreshExternalChanges() {
-        guard !scanning, !refreshing else { return }
+        guard !scanning, !cleaning, !refreshing else { return }
         refreshing = true
         let candidates = groups.flatMap(\.items).flatMap { [$0] + $0.children }.map(\.url.path)
         // Re-walking a full Trash on every activation is thousands of stats.
@@ -440,15 +460,16 @@ final class ScanModel: ObservableObject {
     /// Runs a tool's own cleanup. Unlike everything else in DevSweep this frees the
     /// space immediately — `ContentView` confirms that with the user beforehand.
     func runPrune(_ tool: PruneTool) {
-        guard !scanning else { return }
-        scanning = true
-        status = "Running \(tool.title)…"
+        guard !scanning, !cleaning else { return }
+        cleaning = true
+        cleaningStatus = "Running \(tool.title)…"
 
         Task.detached(priority: .userInitiated) {
             let message = Scanner.runPrune(tool)
             await MainActor.run {
                 self.toolsMessage = message
-                self.scanning = false
+                self.cleaning = false
+                self.cleaningStatus = nil
                 self.rescan()
             }
         }

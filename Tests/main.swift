@@ -278,6 +278,121 @@ check(bundleBytes >= 750_000, "files inside .app bundles are counted (got \(bund
 let linkBytes = measuredSizes[sizeRoot.appendingPathComponent("withlink").path] ?? 0
 check(linkBytes < 100_000, "symlinks are not followed when sizing (got \(linkBytes))")
 
+// MARK: - 4b2. Sharded sizing: many walks, one answer
+
+section("Sharded sizing")
+
+// A tree shaped like the CocoaPods spec repo — a few levels of many small
+// directories — plus loose files at every level, a symlink, and an empty
+// directory. The sharded walk must agree with the single walk exactly, and
+// both must agree with du.
+for a in 0..<10 {
+    fixture("shard/top.\(a).txt", bytes: 1234)
+    for b in 0..<4 {
+        fixture("shard/\(a)/mid.\(b).txt", bytes: 777)
+        for c in 0..<3 {
+            fixture("shard/\(a)/\(b)/leaf.\(c).bin", bytes: 4096 * (c + 1))
+        }
+    }
+}
+fixtureDir("shard/empty")
+let shardRoot = fixtureRoot.appendingPathComponent("shard")
+try? fm.createSymbolicLink(at: shardRoot.appendingPathComponent("link"),
+                           withDestinationURL: shardRoot.appendingPathComponent("0"))
+
+let shardedBytes = Scanner.sizes(of: [shardRoot])[shardRoot.path] ?? -1
+let singleBytes = Scanner.sizeUnsharded(shardRoot)
+check(shardedBytes == singleBytes, "sharded walk equals the single walk (\(shardedBytes) vs \(singleBytes))")
+
+let du = Process()
+du.executableURL = URL(fileURLWithPath: "/usr/bin/du")
+du.arguments = ["-sk", "-x", shardRoot.path]
+let duPipe = Pipe(); du.standardOutput = duPipe
+try? du.run(); du.waitUntilExit()
+let duText = String(data: duPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+let duBytes = Int64(duText.split(separator: "\t").first.flatMap { Int($0) } ?? -1) * 1024
+check(duBytes > 0 && shardedBytes == duBytes, "sharded walk matches du -sk (\(shardedBytes) vs \(duBytes))")
+
+// Several directories at once: every one is reported, progress reaches the
+// total, and the pending list names only directories still being measured.
+let shardDirs = (0..<10).map { shardRoot.appendingPathComponent("\($0)") }
+var progressDone: [Int] = []
+var pendingSane = true
+let progressLock = NSLock()
+let many = Scanner.sizes(of: shardDirs, onProgress: { known, done, total, pending in
+    progressLock.lock()
+    progressDone.append(done)
+    if total != shardDirs.count || done > total || known.count != done
+        || pending.count != total - done || pending.contains(where: { known[shardDirs[$0].path] != nil }) {
+        pendingSane = false
+    }
+    progressLock.unlock()
+})
+check(many.count == shardDirs.count, "every directory is measured")
+check(many.values.allSatisfy { $0 == many.values.first }, "identical directories measure identically")
+check(pendingSane, "progress reports consistent done/known/pending")
+check(progressDone == progressDone.sorted(), "progress never goes backwards within the callback order")
+check(!progressDone.contains(shardDirs.count), "the final result is returned, not emitted as progress")
+
+// A directory trashed while it is being walked ends the walk; it must not
+// hang or crash, and the walk of the other directory is unaffected.
+fixtureDir("shard/victim")
+for i in 0..<200 { fixture("shard/victim/\(i / 20)/f\(i).bin", bytes: 512) }
+let victimDir = shardRoot.appendingPathComponent("victim")
+let bystander = shardRoot.appendingPathComponent("1")
+let bystanderAlone = Scanner.sizes(of: [bystander])[bystander.path] ?? -1
+let raceGroup = DispatchGroup()
+var raced: [String: Int64] = [:]
+raceGroup.enter()
+DispatchQueue.global().async {
+    raced = Scanner.sizes(of: [victimDir, bystander])
+    raceGroup.leave()
+}
+var trashedVictim: NSURL?
+try? fm.trashItem(at: victimDir, resultingItemURL: &trashedVictim)
+check(raceGroup.wait(timeout: .now() + 30) == .success, "a walk survives its directory being trashed mid-way")
+check(raced[bystander.path] == bystanderAlone, "the other directory is still measured correctly")
+if let t = trashedVictim as URL? { try? fm.removeItem(at: t) }
+
+// MARK: - 4b3. Streaming into an existing list
+
+section("Merging streamed rows")
+
+func row(_ name: String, _ bytes: Int64, tag: SafetyTag = .safe) -> ScanItem {
+    ScanItem(title: name, note: "", url: fixtureRoot.appendingPathComponent("merge/\(name)"), tag: tag, bytes: bytes)
+}
+let oldList = [
+    ScanGroup(name: "A", items: [row("a1", 100), row("a2", 200)]),
+    ScanGroup(name: "B", items: [row("b1", 300)]),
+]
+let freshRows = [
+    ScanGroup(name: "A", items: [row("a2", 250), row("a3", 50)]),
+    ScanGroup(name: "C", items: [row("c1", 10)]),
+]
+let mergedList = oldList.merging(freshRows)
+check(mergedList.map(\.name) == ["A", "B", "C"], "old group order kept, new group appended")
+check(mergedList[0].items.map(\.title) == ["a1", "a2", "a3"], "remeasured row replaced in place, new row appended")
+check(mergedList[0].items[1].bytes == 250, "the remeasured row carries the new size")
+check(mergedList[0].items[0].bytes == 100 && mergedList[1].items[0].bytes == 300,
+      "rows the new scan has not reached keep their old size")
+check([ScanGroup]().merging(freshRows).map(\.name) == ["A", "C"], "merging into an empty list is the fresh list")
+
+// What a scan measured before a row was trashed must not come back: a partial
+// with the trashed row, filtered the way ScanModel filters it, drops it.
+let trashedMidScan: Set<String> = [row("a1", 0).id]
+check(freshRows.merging(oldList).removing(paths: trashedMidScan).flatMap(\.items).map(\.title).contains("a1") == false,
+      "a row trashed mid-scan is removed from the streamed result")
+
+// MARK: - 4b4. The status line names the stragglers
+
+section("Measuring status")
+
+check(ScanStatus.measuring(done: 10, total: 153, waiting: ["x", "y"]) == "Measuring caches… 10 of 153",
+      "early on, the status is just a count")
+check(ScanStatus.measuring(done: 152, total: 153, waiting: ["CocoaPods spec repos"])
+      == "Measuring caches… 152 of 153 · still measuring CocoaPods spec repos",
+      "the last few are named")
+
 // MARK: - 4c. Cancellation: a scan told to stop, stops
 
 section("Cancellation")
@@ -585,7 +700,7 @@ if CommandLine.arguments.contains("--live") {
     var emissions = 0
     var overshoot = false
     let emitLock = NSLock()
-    let streamed = Scanner.scanCatalog(audience: .developer, onProgress: { _, done, total in
+    let streamed = Scanner.scanCatalog(audience: .developer, onProgress: { _, done, total, _ in
         emitLock.lock()
         emissions += 1
         if done > total { overshoot = true }

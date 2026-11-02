@@ -197,6 +197,8 @@ struct ContentView: View {
                             Button(pruneLabel(tool)) { pendingPrune = tool }
                         }
                     }
+                    // A prune tool deletes outright; not while anything else moves.
+                    .disabled(model.scanning || model.cleaning)
                 }
 
                 Divider()
@@ -217,9 +219,6 @@ struct ContentView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            // Everything in here either changes the selection of a list that is
-            // still being built or kicks off work that conflicts with the scan.
-            .disabled(model.scanning)
 
             Button {
                 model.rescan()
@@ -252,14 +251,16 @@ struct ContentView: View {
                         .opacity(0)
                 )
 
-            if model.scanning {
+            if model.scanning || model.cleaning {
                 ProgressView().controlSize(.small)
-                // Status strings are short and known (see ScanModel), so this can
-                // ask for its full width instead of truncating.
-                Text(model.status)
+                // A move in progress is the more urgent thing to show; the scan
+                // status comes back the moment it finishes.
+                Text(model.cleaningStatus ?? model.status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 420, alignment: .leading)
             }
 
             Spacer(minLength: 12)
@@ -318,6 +319,7 @@ struct ContentView: View {
     private var content: some View {
         if let report = model.lastReport, report.moved > 0 || !report.failures.isEmpty {
             ReportBanner(report: report,
+                         busy: model.scanning || model.cleaning,
                          putBack: { model.undoLastClean() },
                          dismiss: { model.lastReport = nil })
         }
@@ -413,8 +415,8 @@ struct ContentView: View {
             }
 
             // One button carries the whole flow: first click selects everything
-            // safe, second click moves it to the Trash. Someone who has never seen
-            // the tag system just presses it twice.
+            // safe, second click confirms and moves it to the Trash. Someone who
+            // has never seen the tag system just presses it twice.
             Button {
                 if model.selected.isEmpty {
                     model.selectAllSafe()
@@ -427,7 +429,9 @@ struct ContentView: View {
             }
             .fixedSize()
             .keyboardShortcut(.defaultAction)
-            .disabled(model.scanning || (model.selected.isEmpty && model.safeBytes == 0))
+            // Cleaning while a scan runs is fine — rows are real the moment they
+            // appear. Only one move at a time, though.
+            .disabled(model.cleaning || (model.selected.isEmpty && model.safeBytes == 0))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -931,6 +935,8 @@ private struct TagExplainer: View {
 
 private struct ReportBanner: View {
     let report: Scanner.DeleteReport
+    /// True while a scan or another move is running; Put Back waits for it.
+    let busy: Bool
     let putBack: () -> Void
     let dismiss: () -> Void
 
@@ -954,6 +960,7 @@ private struct ReportBanner: View {
             if report.moved > 0 {
                 Button("Put Back") { putBack() }
                     .buttonStyle(.link)
+                    .disabled(busy)
                     .help("Restores every item from this cleanup to where it came from.")
             }
             Button("Open Trash") {

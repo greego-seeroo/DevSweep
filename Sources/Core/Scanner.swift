@@ -223,17 +223,145 @@ enum Scanner {
     /// under the sandbox (no subprocess), and unlike the old FileManager walk it
     /// counts what is inside app bundles, which caches full of `.app`s (Electron,
     /// Playwright, simulator runtimes) are made of.
-    static func sizes(of urls: [URL], cancel: CancelFlag? = nil) -> [String: Int64] {
+    ///
+    /// A single tree with millions of small files (a CocoaPods spec repo, a
+    /// simulator) takes a minute on one thread and would hold the whole scan
+    /// hostage, so every directory is first split into shards — its larger
+    /// subdirectories, plus one shard for its own loose files — and all shards of
+    /// all directories share one pool. The straggler then uses every core.
+    ///
+    /// `onProgress` fires as directories finish (throttled, except for the last
+    /// few) with the sizes known so far, the count, and the indexes of the
+    /// directories still being measured, so the UI can say what it is waiting on.
+    static func sizes(of urls: [URL], cancel: CancelFlag? = nil,
+                      onProgress: ((_ known: [String: Int64], _ done: Int, _ total: Int,
+                                    _ pending: [Int]) -> Void)? = nil) -> [String: Int64] {
         guard !urls.isEmpty else { return [:] }
-        var result: [String: Int64] = [:]
-        let lock = NSLock()
-        DispatchQueue.concurrentPerform(iterations: urls.count) { i in
-            guard cancel?.isCancelled != true else { return }
-            let url = urls[i]
-            let bytes = walkSize(url, cancel: cancel)
-            lock.lock(); result[url.path] = bytes; lock.unlock()
+
+        // Directories with the least fan-out go first: flat ones finish in the
+        // first moments and rows appear at once, while the huge trees at the
+        // end of the queue get every core to themselves.
+        var perOwner: [[Shard]] = []
+        for (owner, url) in urls.enumerated() {
+            var own: [Shard] = []
+            split(url, owner: owner, into: &own)
+            perOwner.append(own)
         }
+        let shards = perOwner.sorted { $0.count < $1.count }.flatMap { $0 }
+
+        var totals = [Int64](repeating: 0, count: urls.count)
+        var remaining = [Int](repeating: 0, count: urls.count)
+        for shard in shards { remaining[shard.owner] += 1 }
+        var known: [String: Int64] = [:]
+        var done = 0
+        var lastEmit = DispatchTime.now()
+        let lock = NSLock()
+        let total = urls.count
+
+        DispatchQueue.concurrentPerform(iterations: shards.count) { k in
+            guard cancel?.isCancelled != true else { return }
+            let shard = shards[k]
+            let bytes = shard.ownFilesOnly ? ownBlocks(shard.url) : walkSize(shard.url, cancel: cancel)
+
+            var emit: ([String: Int64], Int, [Int])?
+            lock.lock()
+            totals[shard.owner] += bytes
+            remaining[shard.owner] -= 1
+            if remaining[shard.owner] == 0 {
+                known[urls[shard.owner].path] = totals[shard.owner]
+                done += 1
+                if onProgress != nil, done < total {
+                    // Throttle while rows are pouring in; once only a few are
+                    // left, report every finish so the UI can name the stragglers.
+                    let now = DispatchTime.now()
+                    if total - done <= 3 || now.uptimeNanoseconds - lastEmit.uptimeNanoseconds > 250_000_000 {
+                        lastEmit = now
+                        emit = (known, done, remaining.indices.filter { remaining[$0] > 0 })
+                    }
+                }
+            }
+            lock.unlock()
+            if let emit, cancel?.isCancelled != true {
+                onProgress?(emit.0, emit.1, total, emit.2)
+            }
+        }
+
+        // A cancelled run hands back only what finished; the caller discards it.
+        if cancel?.isCancelled == true { return known }
+        var result: [String: Int64] = [:]
+        for (i, url) in urls.enumerated() { result[url.path] = totals[i] }
         return result
+    }
+
+    /// Single-threaded walk of one directory — the pre-sharding behaviour, kept
+    /// for the tests to compare against and for `trashSize`.
+    static func sizeUnsharded(_ url: URL, cancel: CancelFlag? = nil) -> Int64 {
+        walkSize(url, cancel: cancel)
+    }
+
+    /// One unit of walking: a subtree, or just a directory's own loose files.
+    private struct Shard {
+        let url: URL
+        let owner: Int
+        let ownFilesOnly: Bool
+    }
+
+    /// Breaks a directory into shards: its subdirectories, a few levels down,
+    /// until the per-directory budget is spent, plus one shard per level for
+    /// the loose files. A repo laid out as `Specs/0/1/...` fans out to dozens
+    /// of walks; a flat directory stays one. Subdirectories on another volume
+    /// are left out, as `FTS_XDEV` would leave them out.
+    private static func split(_ url: URL, owner: Int, into shards: inout [Shard],
+                              depth: Int = 0, device: dev_t? = nil, budget: Int = 96) {
+        var st = stat()
+        guard lstat(url.path, &st) == 0, (st.st_mode & S_IFMT) == S_IFDIR else {
+            shards.append(Shard(url: url, owner: owner, ownFilesOnly: false))
+            return
+        }
+        let device = device ?? st.st_dev
+
+        // The budget is per directory being measured, so a tree late in the
+        // catalog gets the same fan-out as one at the front.
+        var subdirs: [URL] = []
+        if depth < 3, shards.filter({ $0.owner == owner }).count < budget,
+           let names = try? FileManager.default.contentsOfDirectory(atPath: url.path) {
+            for name in names {
+                let child = url.appendingPathComponent(name)
+                var cst = stat()
+                guard lstat(child.path, &cst) == 0, (cst.st_mode & S_IFMT) == S_IFDIR,
+                      cst.st_dev == device else { continue }
+                subdirs.append(child)
+            }
+        }
+
+        guard subdirs.count >= 2 else {
+            shards.append(Shard(url: url, owner: owner, ownFilesOnly: false))
+            return
+        }
+        shards.append(Shard(url: url, owner: owner, ownFilesOnly: true))
+        for sub in subdirs {
+            split(sub, owner: owner, into: &shards, depth: depth + 1, device: device, budget: budget)
+        }
+    }
+
+    /// The blocks a directory occupies itself plus those of its loose files —
+    /// everything a full walk would count at this level, minus the
+    /// subdirectories that are shards of their own. Symlinks are skipped, as
+    /// `walkSize` skips them.
+    private static func ownBlocks(_ url: URL) -> Int64 {
+        var st = stat()
+        guard lstat(url.path, &st) == 0 else { return 0 }
+        var total = Int64(st.st_blocks) * 512
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: url.path) else { return total }
+        for name in names {
+            var cst = stat()
+            guard lstat(url.appendingPathComponent(name).path, &cst) == 0 else { continue }
+            switch cst.st_mode & S_IFMT {
+            case S_IFDIR, S_IFLNK: continue
+            default: total += Int64(cst.st_blocks) * 512
+            }
+        }
+        return total
     }
 
     /// On-disk size of a file or directory, measured the way `du -x` does:
@@ -286,9 +414,11 @@ enum Scanner {
     /// called from a background thread as directories finish measuring, with the
     /// groups assembled from everything measured so far plus done/total counts —
     /// the UI can show rows filling in instead of a blank wait.
+    /// `onProgress` receives the rows measured so far, the count, and the titles
+    /// of the rules still being measured — the ones the scan is waiting on.
     static func scanCatalog(audience: Audience = .developer,
                             cancel: CancelFlag? = nil,
-                            onProgress: (([ScanGroup], Int, Int) -> Void)? = nil) -> [ScanGroup] {
+                            onProgress: (([ScanGroup], Int, Int, [String]) -> Void)? = nil) -> [ScanGroup] {
         let fm = FileManager.default
         let rules = Catalog.activeRules(for: audience)
 
@@ -381,35 +511,22 @@ enum Scanner {
 
         guard !toMeasure.isEmpty else { return assemble([:]) }
 
+        // Which rule each measured directory belongs to, so a stalled scan can
+        // say "still measuring CocoaPods spec repos" rather than show a frozen
+        // counter.
+        var ruleTitle: [String] = []
+        for p in pending {
+            if p.children.isEmpty { ruleTitle.append(p.rule.title) }
+            else { ruleTitle.append(contentsOf: p.children.map { _ in p.rule.title }) }
+        }
+
         // Measure concurrently, handing the caller a fresh assembly every so
         // often. Rows appear as their directories finish instead of after all.
-        var measured: [String: Int64] = [:]
-        var done = 0
-        var lastEmit = DispatchTime.now()
-        let lock = NSLock()
-        let total = toMeasure.count
-
-        DispatchQueue.concurrentPerform(iterations: total) { i in
-            guard cancel?.isCancelled != true else { return }
-            let bytes = walkSize(toMeasure[i], cancel: cancel)
-            var snapshot: [String: Int64]?
-            var count = 0
-            lock.lock()
-            measured[toMeasure[i].path] = bytes
-            done += 1
-            count = done
-            if onProgress != nil, done < total {
-                let now = DispatchTime.now()
-                if now.uptimeNanoseconds - lastEmit.uptimeNanoseconds > 250_000_000 {
-                    lastEmit = now
-                    snapshot = measured
-                }
-            }
-            lock.unlock()
-            if let snapshot, cancel?.isCancelled != true {
-                onProgress?(assemble(snapshot), count, total)
-            }
-        }
+        let measured = sizes(of: toMeasure, cancel: cancel, onProgress: onProgress == nil ? nil : { known, done, total, waiting in
+            var titles: [String] = []
+            for i in waiting where !titles.contains(ruleTitle[i]) { titles.append(ruleTitle[i]) }
+            onProgress?(assemble(known), done, total, titles)
+        })
         return assemble(measured)
     }
 

@@ -88,6 +88,44 @@ extension Array where Element == ScanGroup {
             return items.isEmpty ? nil : ScanGroup(name: group.name, items: items)
         }
     }
+
+    /// The old list with freshly measured rows swapped in. Used while a rescan
+    /// streams: rows the new scan has finished replace their old versions in
+    /// place, rows it has not reached yet keep their old numbers, and rows it
+    /// found for the first time are appended. Group order is preserved, new
+    /// groups go at the end — the final result reorders everything anyway.
+    func merging(_ fresh: [ScanGroup]) -> [ScanGroup] {
+        guard !isEmpty else { return fresh }
+        var byID: [String: ScanItem] = [:]
+        for item in fresh.flatMap(\.items) { byID[item.id] = item }
+
+        var seenGroups = Set<String>()
+        var result: [ScanGroup] = map { group in
+            seenGroups.insert(group.name)
+            var items = group.items.map { byID[$0.id] ?? $0 }
+            let have = Set(items.map(\.id))
+            if let newer = fresh.first(where: { $0.name == group.name }) {
+                items.append(contentsOf: newer.items.filter { !have.contains($0.id) })
+            }
+            return ScanGroup(name: group.name, items: items)
+        }
+        result.append(contentsOf: fresh.filter { !seenGroups.contains($0.name) })
+        return result
+    }
+}
+
+// MARK: - Status text
+
+enum ScanStatus {
+    /// The scan status line. Once only a few directories are left it names
+    /// them — a counter frozen at "152 of 153" explains nothing.
+    static func measuring(done: Int, total: Int, waiting: [String]) -> String {
+        var line = "Measuring caches… \(done) of \(total)"
+        if total - done <= 3, !waiting.isEmpty {
+            line += " · still measuring \(waiting.joined(separator: ", "))"
+        }
+        return line
+    }
 }
 
 // MARK: - The guard rail
