@@ -114,6 +114,73 @@ extension Array where Element == ScanGroup {
     }
 }
 
+// MARK: - The last scan, remembered
+
+extension SafetyTag: Codable {}
+extension ScanItem: Codable {}
+extension ScanGroup: Codable {}
+
+/// The last completed scan, written to disk so the next launch (or the next
+/// switch of mode) shows results at once and only re-measures in the
+/// background. The file lives in the app's own Application Support folder —
+/// inside the container on the App Store build — so it needs no folder grant
+/// and leaves nothing in the user's home.
+///
+/// A remembered row is only as good as the directory behind it: rows whose
+/// path has vanished since are dropped on load, and the scan that follows
+/// replaces everything anyway.
+enum ScanCache {
+    static let schema = 1
+
+    struct Snapshot: Codable {
+        var schema: Int
+        let audience: String
+        let date: Date
+        let groups: [ScanGroup]
+    }
+
+    /// `~/Library/Application Support/DevSweep` — the container's, when sandboxed.
+    static var directory: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("DevSweep", isDirectory: true)
+    }
+
+    static func file(for audience: Audience, in directory: URL) -> URL {
+        directory.appendingPathComponent("lastScan-\(audience.rawValue).json")
+    }
+
+    static func save(_ groups: [ScanGroup], audience: Audience, in directory: URL = directory) {
+        let snapshot = Snapshot(schema: schema, audience: audience.rawValue, date: Date(), groups: groups)
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? data.write(to: file(for: audience, in: directory), options: .atomic)
+    }
+
+    /// The remembered rows for a mode, minus any whose directory is gone, or
+    /// nil when there is nothing usable to show.
+    static func load(audience: Audience, in directory: URL = directory) -> (groups: [ScanGroup], date: Date)? {
+        guard let data = try? Data(contentsOf: file(for: audience, in: directory)),
+              let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
+              snapshot.schema == schema, snapshot.audience == audience.rawValue
+        else { return nil }
+
+        let fm = FileManager.default
+        var gone = Set<String>()
+        for item in snapshot.groups.flatMap(\.items) {
+            for row in [item] + item.children where !fm.fileExists(atPath: row.url.path) {
+                gone.insert(row.id)
+            }
+        }
+        let groups = snapshot.groups.removing(paths: gone)
+        return groups.isEmpty ? nil : (groups, snapshot.date)
+    }
+
+    static func clear(audience: Audience, in directory: URL = directory) {
+        try? FileManager.default.removeItem(at: file(for: audience, in: directory))
+    }
+}
+
 // MARK: - Status text
 
 enum ScanStatus {

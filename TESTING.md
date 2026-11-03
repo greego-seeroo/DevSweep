@@ -23,6 +23,7 @@ sweeps any left behind by an earlier crashed run.
 | 6b | Sharded sizing | The parallel, sharded walk equals the single walk and `du -sk -x` byte for byte on a deep fixture with loose files, a symlink and an empty folder; progress callbacks report consistent done/known/pending; a folder trashed mid-walk neither hangs nor corrupts the other folder's total |
 | 6c | Merging streamed rows | Remeasured rows replace their old versions in place, unreached rows keep their old size, new rows and groups are appended; a row trashed mid-scan never comes back from a partial |
 | 6d | Measuring status | The status line is a plain count until the last three folders, then names them |
+| 6e | Remembered scan | A scan round-trips through the JSON file with groups, order, titles, notes, bytes, tags, children and Protected rows; rows and children whose folder vanished are dropped on load; the other mode, an empty result, a corrupt file and a newer schema all load as nothing |
 | 7 | Cancellation | A cancelled sizing run measures nothing; a cancelled project scan returns nothing; an uncancelled flag changes nothing |
 | 8 | Disk space | Reads succeed repeatedly (regression: the cached-URL bug returned the first reading forever); free ≤ total |
 | 9 | Size parsing | docker/brew/nix output parsed; hex digests, version numbers and bare counts are not sizes |
@@ -36,7 +37,7 @@ sweeps any left behind by an earlier crashed run.
 | 13 | Live System Data scan | Same guarantees as row 12 for Everyday mode; only everyday groups appear |
 | 14 | Live streaming | Partial results are emitted during measuring; progress counter never overshoots; final result complete |
 | 15 | Cleanup | The fixture directory is gone from `$HOME` |
-| 16 | Live view model | `Tests/Model/main.swift`, compiled with `ScanModel`: a fixture row under `~/.cache` streams in while the real scan is measuring, is ticked and moved to the Trash mid-scan, leaves the list at once, stays gone when the scan finishes, keeps its Put Back across a rescan, and comes back with its contents on Put Back |
+| 16 | Live view model | `Tests/Model/main.swift`, compiled with `ScanModel`: a fixture row under `~/.cache` streams in while the real scan is measuring, is ticked and moved to the Trash mid-scan, leaves the list at once, stays gone when the scan finishes, keeps its Put Back across a rescan, and comes back with its contents on Put Back; the finished scan is remembered so a new model opens with its rows (minus the trashed one) before scanning |
 
 ## Manual checklist — walk before release
 
@@ -60,7 +61,9 @@ sweeps any left behind by an earlier crashed run.
 - [ ] Every **Open Trash** button (Tools menu, footer, cleanup banner) opens the real `~/.Trash` in Finder in the sandboxed build.
 
 ### D. Scanning & progress
-- [ ] First scan: rows appear progressively with "Measuring caches… N of M" — no long blank wait.
+- [ ] First scan on a fresh install: rows appear progressively with "Measuring caches… N of M" — no long blank wait.
+- [ ] Every later launch: the window opens with last time's rows already on it and the status reads "Refreshing results from N minutes ago…"; rows update in place as the scan reaches them; a folder deleted since last time is not shown.
+- [ ] Switching modes shows that mode's last results instantly, then refreshes them.
 - [ ] When three or fewer folders remain, the status names them ("still measuring CocoaPods spec repos").
 - [ ] Rescan keeps the previous list visible; rows update in place as the new scan reaches them, and nothing flickers to empty.
 - [ ] While scanning: Rescan and the Folders menu are disabled; the tabs, the Tools menu (except the prune tools), the checkboxes and the main clean button all stay usable.

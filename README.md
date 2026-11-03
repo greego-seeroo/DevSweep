@@ -108,6 +108,14 @@ If you don't want to think about any of this, press the big button twice: the
 first press selects everything Safe, the second shows you the list it is about
 to move. Confirm, and it all goes to the Trash.
 
+The results of the last scan are remembered, so the window opens with rows on
+it straight away — the status line says how old they are — and the scan that
+starts at once refreshes them in place. A remembered row whose folder has since
+gone is dropped before it is shown. The record lives in the app's own
+Application Support folder, inside its sandbox container; nothing is written to
+your home folder. The same applies when you switch between Developer and
+System Data: whatever that mode found last time appears instantly.
+
 You never have to wait for a scan to finish. Rows appear as their folders are
 measured, and any row on screen can be ticked and moved to the Trash while the
 rest of the scan is still running: the guard re-checks every path at the moment

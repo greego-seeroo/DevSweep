@@ -15,6 +15,7 @@ struct ContentView: View {
     /// Shown once, ever. Bumping the suffix re-shows it after a redesign —
     /// v2: the intro gained the Developer / System Data modes page.
     @AppStorage("devsweep.welcomeSeen.v2") private var welcomeSeen = false
+    @State private var launched = false
     @State private var showWelcome = false
 
     var body: some View {
@@ -32,7 +33,9 @@ struct ContentView: View {
         .frame(minWidth: 900, minHeight: 620)
         .onAppear {
             if !welcomeSeen { showWelcome = true }
-            if model.groups.isEmpty { model.rescan() }
+            // Always scan on opening, even when last time's rows are already on
+            // screen: they are shown so the wait is not blank, not as truth.
+            if !launched { launched = true; model.rescan() }
         }
         .sheet(isPresented: $showWelcome) {
             WelcomeView(sandboxed: model.isSandboxed) {

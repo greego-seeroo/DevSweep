@@ -60,6 +60,17 @@ Task { @MainActor in
     check(model.lastReport?.moved == 1, "Put Back survives the scan finishing")
     check(!model.selected.contains(fixture.path), "nothing stale remains selected")
 
+    // The finished scan is remembered: a model created now starts with rows
+    // before it has scanned anything, and its first scan says so.
+    check(model.lastScanDate.map { abs($0.timeIntervalSinceNow) < 60 } == true, "the scan's time is recorded")
+    check(ScanCache.load(audience: .developer) != nil, "the finished scan is written to disk")
+    let fresh = ScanModel()
+    check(!fresh.groups.isEmpty && !fresh.scanning, "a new model opens with last time's rows before scanning")
+    check(fresh.groups.flatMap(\.items).count == model.groups.flatMap(\.items).count, "with the same rows")
+    check(rowPresent(fresh) == nil, "and without the row that was trashed")
+    check(ScanModel.openingStatus(remembered: fresh.lastScanDate).hasPrefix("Refreshing results from"),
+          "its first scan announces a refresh, not a blank measure")
+
     model.rescan()
     _ = await waitUntil("rescan to finish", timeout: 180) { !model.scanning }
     check(model.lastReport?.moved == 1, "Put Back survives a rescan")

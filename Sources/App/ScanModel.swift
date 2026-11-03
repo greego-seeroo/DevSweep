@@ -12,6 +12,9 @@ final class ScanModel: ObservableObject {
     @Published var cleaning = false
     @Published var status = "Ready."
     @Published var cleaningStatus: String?
+    /// When the rows on screen were measured. Set from the remembered scan at
+    /// launch, then from each completed scan.
+    @Published var lastScanDate: Date?
     /// Sandbox build only: true when no folder has been granted yet, so the UI
     /// shows the "grant access" screen instead of an empty result.
     @Published var needsAccess = false
@@ -55,7 +58,18 @@ final class ScanModel: ObservableObject {
             userPickedAudience = true
         }
 
+        // Last time's results, so the window has rows the moment it opens. The
+        // scan that follows refreshes them in place.
+        if SandboxAccess.hasAccess { showRemembered(for: audience) }
+
         watchTrash()
+    }
+
+    /// Puts the remembered rows for a mode on screen, if there are any.
+    private func showRemembered(for audience: Audience) {
+        guard let remembered = ScanCache.load(audience: audience) else { return }
+        groups = remembered.groups
+        lastScanDate = remembered.date
     }
 
     /// True once the user has ever tapped the mode tabs themselves. Auto-mode
@@ -73,8 +87,11 @@ final class ScanModel: ObservableObject {
         UserDefaults.standard.set(new.rawValue, forKey: audienceKey)
         selected.removeAll()
         // The old mode's rows must not linger while the new mode loads — clear
-        // now, so the scan streams the new catalog into an empty list instead.
+        // now, then show what the new mode found last time, if anything, so
+        // the switch is instant and the scan refreshes rows in place.
         groups = []
+        lastScanDate = nil
+        showRemembered(for: new)
         if scanning {
             scanCancel?.cancel()
             status = "Loading \(new.label)…"
@@ -201,7 +218,7 @@ final class ScanModel: ObservableObject {
         needsAccess = false
 
         scanning = true
-        status = "Measuring caches…"
+        status = Self.openingStatus(remembered: groups.isEmpty ? nil : lastScanDate)
         removedDuringScan = []
         let skip = Set(excluded.map(\.standardizedFileURL.path))
         let audience = self.audience
@@ -260,6 +277,8 @@ final class ScanModel: ObservableObject {
                     self.selected.formIntersection(stillValid)
                     self.groups = scanned
                     self.status = "Scanned \(scanned.count) categories."
+                    self.lastScanDate = Date()
+                    ScanCache.save(scanned, audience: audience)
 
                     // A Developer scan that found literally nothing, on a machine
                     // whose user never touched the tabs, means this isn't a
@@ -352,6 +371,17 @@ final class ScanModel: ObservableObject {
         groups = groups.removing(paths: paths)
         let stillValid = Set(groups.flatMap(\.items).flatMap(\.deletableLeaves).map(\.id))
         selected.formIntersection(stillValid)
+        // Keep the remembered scan honest about what is gone.
+        ScanCache.save(groups, audience: audience)
+    }
+
+    /// What the status line says as a scan starts: a plain "Measuring" on an
+    /// empty list, or how old the rows already on screen are.
+    nonisolated static func openingStatus(remembered: Date?) -> String {
+        guard let remembered else { return "Measuring caches…" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Refreshing results from \(formatter.localizedString(for: remembered, relativeTo: Date()))…"
     }
 
     /// Cheap catch-up when the user comes back from Finder or a terminal: rows

@@ -383,6 +383,66 @@ let trashedMidScan: Set<String> = [row("a1", 0).id]
 check(freshRows.merging(oldList).removing(paths: trashedMidScan).flatMap(\.items).map(\.title).contains("a1") == false,
       "a row trashed mid-scan is removed from the streamed result")
 
+// MARK: - 4b3b. The remembered scan
+
+section("Remembered scan")
+
+let cacheDir = fixtureRoot.appendingPathComponent("cache")
+fixtureDir("cache/rows/keep")
+fixtureDir("cache/rows/container")
+fixtureDir("cache/rows/child-keep")
+fixtureDir("cache/rows/child-gone")
+fixtureDir("cache/rows/gone")
+fixtureDir("cache/rows/locked")
+let rows = fixtureRoot.appendingPathComponent("cache/rows")
+func cacheRow(_ name: String, _ bytes: Int64, tag: SafetyTag = .safe, children: [ScanItem] = []) -> ScanItem {
+    ScanItem(title: name, note: "note \(name)", url: rows.appendingPathComponent(name), tag: tag, bytes: bytes, children: children)
+}
+let remembered = [
+    ScanGroup(name: "Xcode", items: [
+        cacheRow("keep", 1000),
+        cacheRow("gone", 2000),
+        cacheRow("container", 0, tag: .review, children: [cacheRow("child-keep", 300), cacheRow("child-gone", 400)]),
+    ]),
+    ScanGroup(name: "Android", items: [cacheRow("locked", 0, tag: .never)]),
+]
+ScanCache.save(remembered, audience: .developer, in: cacheDir)
+check(fm.fileExists(atPath: ScanCache.file(for: .developer, in: cacheDir).path), "the scan is written to disk")
+
+let loaded = ScanCache.load(audience: .developer, in: cacheDir)
+check(loaded != nil, "the scan loads back")
+check(loaded.map { abs($0.date.timeIntervalSinceNow) < 5 } == true, "with the time it was taken")
+check(loaded?.groups.map(\.name) == ["Xcode", "Android"], "groups and their order survive")
+let xcode = loaded?.groups.first?.items ?? []
+check(xcode.map(\.title) == ["keep", "gone", "container"], "rows survive with titles")
+check(xcode.first?.bytes == 1000 && xcode.first?.note == "note keep" && xcode.first?.tag == .safe, "bytes, notes and tags survive")
+check(xcode.last?.children.map(\.title) == ["child-keep", "child-gone"], "children survive")
+check(loaded?.groups.last?.items.first?.tag == .never, "Protected rows survive")
+check(ScanCache.load(audience: .everyday, in: cacheDir) == nil, "the other mode has nothing remembered")
+
+try? fm.removeItem(at: rows.appendingPathComponent("gone"))
+try? fm.removeItem(at: rows.appendingPathComponent("child-gone"))
+let pruned = ScanCache.load(audience: .developer, in: cacheDir)
+check(pruned?.groups.first?.items.map(\.title) == ["keep", "container"], "a row whose directory vanished is dropped")
+check(pruned?.groups.first?.items.last?.children.map(\.title) == ["child-keep"], "so is a vanished child")
+
+try? fm.removeItem(at: rows.appendingPathComponent("keep"))
+try? fm.removeItem(at: rows.appendingPathComponent("child-keep"))
+try? fm.removeItem(at: rows.appendingPathComponent("locked"))
+check(ScanCache.load(audience: .developer, in: cacheDir) == nil, "nothing left means nothing remembered")
+
+try? "not json".write(to: ScanCache.file(for: .developer, in: cacheDir), atomically: true, encoding: .utf8)
+check(ScanCache.load(audience: .developer, in: cacheDir) == nil, "a corrupt file is ignored")
+ScanCache.save(remembered, audience: .developer, in: cacheDir)
+var raw = (try? JSONSerialization.jsonObject(with: Data(contentsOf: ScanCache.file(for: .developer, in: cacheDir)))) as? [String: Any] ?? [:]
+raw["schema"] = ScanCache.schema + 1
+try? JSONSerialization.data(withJSONObject: raw).write(to: ScanCache.file(for: .developer, in: cacheDir))
+check(ScanCache.load(audience: .developer, in: cacheDir) == nil, "a file from a newer schema is ignored")
+ScanCache.clear(audience: .developer, in: cacheDir)
+check(!fm.fileExists(atPath: ScanCache.file(for: .developer, in: cacheDir).path), "clear removes the file")
+
+check(ScanCache.directory.path.contains("Application Support/DevSweep"), "the real cache lives in Application Support")
+
 // MARK: - 4b4. The status line names the stragglers
 
 section("Measuring status")
