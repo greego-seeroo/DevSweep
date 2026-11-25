@@ -152,8 +152,10 @@ struct PruneTool: Identifiable, Hashable {
     static let all: [PruneTool] = [
         PruneTool(
             id: "simctl",
-            title: "Delete unavailable simulators",
-            detail: "Removes simulator devices whose runtime is no longer installed. Those devices cannot boot, so nothing usable is lost.",
+            title: String(localized: "Delete unavailable simulators",
+                          comment: "Prune tool name (Tools menu and confirmation title): runs `xcrun simctl delete unavailable`."),
+            detail: String(localized: "Removes simulator devices whose runtime is no longer installed. Those devices cannot boot, so nothing usable is lost.",
+                           comment: "Confirmation text for the simulator prune tool."),
             requires: "xcrun --find simctl",
             probe: nil,
             sumsProbeSizes: false,
@@ -162,8 +164,10 @@ struct PruneTool: Identifiable, Hashable {
         ),
         PruneTool(
             id: "docker",
-            title: "Docker: prune unused data",
-            detail: "Runs `docker system prune -f`: removes stopped containers, dangling images, unused networks and the build cache. Running containers, tagged images and named volumes are left alone. Docker keeps its disk image inside ~/Library/Containers, which DevSweep will not touch, so this is the only way to get that space back.",
+            title: String(localized: "Docker: prune unused data",
+                          comment: "Prune tool name (Tools menu and confirmation title). 'Docker' is a product name."),
+            detail: String(localized: "Runs `docker system prune -f`: removes stopped containers, dangling images, unused networks and the build cache. Running containers, tagged images and named volumes are left alone. Docker keeps its disk image inside ~/Library/Containers, which DevSweep will not touch, so this is the only way to get that space back.",
+                           comment: "Confirmation text for the Docker prune tool. Keep the back-ticked command and the path as they are."),
             requires: "docker info",
             probe: "docker system df --format '{{.Reclaimable}}'",
             sumsProbeSizes: true,
@@ -172,8 +176,10 @@ struct PruneTool: Identifiable, Hashable {
         ),
         PruneTool(
             id: "brew",
-            title: "Homebrew: full cleanup",
-            detail: "Runs `brew cleanup`: removes outdated downloads and the old versions of formulae you have upgraded. Goes further than trashing the Homebrew cache directory, which only covers the downloads.",
+            title: String(localized: "Homebrew: full cleanup",
+                          comment: "Prune tool name (Tools menu and confirmation title). 'Homebrew' is a product name."),
+            detail: String(localized: "Runs `brew cleanup`: removes outdated downloads and the old versions of formulae you have upgraded. Goes further than trashing the Homebrew cache directory, which only covers the downloads.",
+                           comment: "Confirmation text for the Homebrew prune tool. 'Formulae' is Homebrew's word for packages. Keep the back-ticked command."),
             requires: "command -v brew",
             probe: "brew cleanup -n",
             sumsProbeSizes: false,
@@ -182,8 +188,10 @@ struct PruneTool: Identifiable, Hashable {
         ),
         PruneTool(
             id: "nix",
-            title: "Nix: collect garbage",
-            detail: "Runs `nix-collect-garbage -d`: deletes store paths no longer reachable from a current generation, and drops old generations of your profiles. You cannot roll back to a deleted generation afterwards.",
+            title: String(localized: "Nix: collect garbage",
+                          comment: "Prune tool name (Tools menu and confirmation title). 'Nix' is a product name."),
+            detail: String(localized: "Runs `nix-collect-garbage -d`: deletes store paths no longer reachable from a current generation, and drops old generations of your profiles. You cannot roll back to a deleted generation afterwards.",
+                           comment: "Confirmation text for the Nix prune tool. 'Generation' and 'profile' are Nix terms. Keep the back-ticked command."),
             requires: "command -v nix-collect-garbage",
             probe: "nix-collect-garbage --dry-run 2>&1",
             sumsProbeSizes: false,
@@ -257,6 +265,13 @@ enum Scanner {
         var lastEmit = DispatchTime.now()
         let lock = NSLock()
         let total = urls.count
+        // Progress is delivered outside `lock` so other shards can finish
+        // meanwhile — which lets two threads deliver in swapped order. This
+        // second lock serialises the callbacks and drops any that an emission
+        // with a higher count has already overtaken, so the caller only ever
+        // sees progress move forward.
+        let deliveryLock = NSLock()
+        var delivered = 0
 
         DispatchQueue.concurrentPerform(iterations: shards.count) { k in
             guard cancel?.isCancelled != true else { return }
@@ -282,7 +297,12 @@ enum Scanner {
             }
             lock.unlock()
             if let emit, cancel?.isCancelled != true {
-                onProgress?(emit.0, emit.1, total, emit.2)
+                deliveryLock.lock()
+                defer { deliveryLock.unlock() }
+                if emit.1 > delivered {
+                    delivered = emit.1
+                    onProgress?(emit.0, emit.1, total, emit.2)
+                }
             }
         }
 
@@ -475,7 +495,7 @@ enum Scanner {
             for p in pending {
                 let childItems: [ScanItem] = p.children.map { child in
                     ScanItem(
-                        title: child.title,
+                        title: child.title,          // a folder or app name, never translated
                         note: child.note,
                         url: child.url,
                         tag: p.rule.tag,
@@ -486,8 +506,8 @@ enum Scanner {
                 .sorted { $0.bytes > $1.bytes }
 
                 let item = ScanItem(
-                    title: p.rule.title,
-                    note: p.rule.note,
+                    title: String(localized: p.rule.title),
+                    note: String(localized: p.rule.note),
                     url: p.url,
                     tag: p.rule.tag,
                     bytes: childItems.isEmpty ? (measured[p.url.path] ?? 0) : 0,
@@ -516,8 +536,9 @@ enum Scanner {
         // counter.
         var ruleTitle: [String] = []
         for p in pending {
-            if p.children.isEmpty { ruleTitle.append(p.rule.title) }
-            else { ruleTitle.append(contentsOf: p.children.map { _ in p.rule.title }) }
+            let title = String(localized: p.rule.title)
+            if p.children.isEmpty { ruleTitle.append(title) }
+            else { ruleTitle.append(contentsOf: p.children.map { _ in title }) }
         }
 
         // Measure concurrently, handing the caller a fresh assembly every so
@@ -612,9 +633,12 @@ enum Scanner {
         let items = hits.map { hit -> ScanItem in
             let parent = hit.url.deletingLastPathComponent()
             let where_ = parent.path.replacingOccurrences(of: SafetyGuard.home.path, with: "~")
+            // Two folder names joined by a separator — nothing to translate.
+            let title = "\(parent.lastPathComponent) › \(hit.url.lastPathComponent)"
             return ScanItem(
-                title: "\(parent.lastPathComponent) › \(hit.url.lastPathComponent)",
-                note: "\(hit.artifact.note)  ·  \(where_)",
+                title: title,
+                note: String(localized: "\(String(localized: hit.artifact.note))  ·  \(where_)",
+                             comment: "Row subtitle for a project artifact. %1$@ is the explanation of what the folder is, %2$@ is the project's path. Keep the separator."),
                 url: hit.url,
                 tag: hit.artifact.tag,
                 bytes: measured[hit.url.path] ?? 0
@@ -652,7 +676,8 @@ enum Scanner {
         for item in items {
             // Re-check at the moment of deletion, not just at selection time.
             guard SafetyGuard.isDeletable(item.url) else {
-                report.failures.append((item.url, "blocked by safety guard"))
+                report.failures.append((item.url, String(localized: "blocked by safety guard",
+                                                         comment: "Reason an item was not moved: the independent safety check refused the path.")))
                 continue
             }
             guard fm.fileExists(atPath: item.url.path) else { continue }
@@ -737,11 +762,18 @@ enum Scanner {
         let text = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if result.timedOut {
-            return text.isEmpty ? "\(tool.title) timed out." : "Timed out.\n\n\(text)"
+            return text.isEmpty
+                ? String(localized: "\(tool.title) timed out.",
+                         comment: "Result alert after a prune tool ran too long. %@ is the tool name.")
+                : String(localized: "Timed out.\n\n\(text)",
+                         comment: "Result alert after a prune tool ran too long. %@ is the tool's own output, shown as is.")
         }
         if result.status != 0 {
-            return text.isEmpty ? "\(tool.title) failed (exit \(result.status))." : text
+            return text.isEmpty
+                ? String(localized: "\(tool.title) failed (exit \(result.status)).",
+                         comment: "Result alert when a prune tool failed. %1$@ is the tool name, %2$d its exit code.")
+                : text
         }
-        return text.isEmpty ? "Nothing to clean up." : text
+        return text.isEmpty ? String(localized: "Nothing to clean up.", comment: "Result alert when a prune tool found nothing to remove.") : text
     }
 }

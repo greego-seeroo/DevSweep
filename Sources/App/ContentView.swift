@@ -57,41 +57,79 @@ struct ContentView: View {
         }
         .onChange(of: model.groups.map(\.name)) { _, names in autoCollapse(names) }
         .sheet(isPresented: $confirming) { ConfirmSheet(isPresented: $confirming) }
-        .alert("Cleanup finished",
+        .alert(Text("Cleanup finished", comment: "Alert title after a prune tool (Docker, Homebrew…) has run."),
                isPresented: Binding(
                    get: { model.toolsMessage != nil },
                    set: { if !$0 { model.toolsMessage = nil } })) {
             Button("OK") { model.toolsMessage = nil }
         } message: {
-            Text(model.toolsMessage ?? "")
+            // The tool's own output, or an already localized summary.
+            Text(verbatim: model.toolsMessage ?? "")
         }
         .alert(
-            pendingPrune?.title ?? "",
+            Text(verbatim: pendingPrune?.title ?? ""),
             isPresented: Binding(
                 get: { pendingPrune != nil },
                 set: { if !$0 { pendingPrune = nil } }),
             presenting: pendingPrune
         ) { tool in
             Button("Cancel", role: .cancel) { pendingPrune = nil }
-            Button(tool.harmless ? "Run" : "Free space now",
-                   role: tool.harmless ? nil : .destructive) {
-                model.runPrune(tool)
-                pendingPrune = nil
+            if tool.harmless {
+                Button(action: { model.runPrune(tool); pendingPrune = nil }) {
+                    Text("Run", comment: "Confirms a prune tool that cannot lose anything (unavailable simulators).")
+                }
+            } else {
+                Button(role: .destructive, action: { model.runPrune(tool); pendingPrune = nil }) {
+                    Text("Free space now", comment: "Confirms a prune tool that deletes outright, bypassing the Trash.")
+                }
             }
         } message: { tool in
-            Text(pruneWarning(for: tool))
+            Text(verbatim: pruneWarning(for: tool))
+        }
+        .alert(
+            languageAlertTitle,
+            isPresented: Binding(
+                get: { languageSwitch.pending != nil },
+                set: { if !$0 { languageSwitch.pending = nil } }),
+            presenting: languageSwitch.pending
+        ) { language in
+            Button("Cancel", role: .cancel) { languageSwitch.pending = nil }
+            Button(action: {
+                AppLanguage.apply(language)
+                AppLanguage.relaunch()
+            }) {
+                Text("Relaunch", comment: "Confirms a language change; the app quits and reopens.")
+            }
+        } message: { _ in
+            Text("DevSweep quits and reopens in the new language. Nothing is moved or deleted, and your last scan is kept.",
+                 comment: "Explains what happens when the language is changed.")
         }
     }
 
+    @ObservedObject private var languageSwitch = LanguageSwitch.shared
+
+    private var languageAlertTitle: Text {
+        switch languageSwitch.pending {
+        case .system?, nil:
+            return Text("Follow the system language?", comment: "Alert title when the user picks 'System Language'.")
+        case let language?:
+            return Text("Switch language to \(language.menuTitle)?",
+                        comment: "Alert title when the user picks a language. %@ is the language's own name (Deutsch, 日本語…).")
+        }
+    }
+
+    /// Separate localized paragraphs, joined — never one sentence built from parts.
     private func pruneWarning(for tool: PruneTool) -> String {
-        var text = tool.detail
+        var paragraphs = [tool.detail]
         if let bytes = tool.reclaimable, bytes > 0 {
-            text += "\n\nIt reports about \(Fmt.size(bytes)) to reclaim."
+            paragraphs.append(String(localized: "It reports about \(Fmt.size(bytes)) to reclaim.",
+                                     comment: "Prune confirmation, extra paragraph. %@ is a size the tool itself estimated."))
         }
         if !tool.harmless {
-            text += "\n\nThis one does not go through the Trash. The space comes back immediately and there is nothing to restore afterwards."
+            paragraphs.append(String(localized: "This one does not go through the Trash. The space comes back immediately and there is nothing to restore afterwards.",
+                                     comment: "Prune confirmation, warning paragraph for tools that delete outright."))
         }
-        return text
+        return paragraphs.joined(separator: "\n\n")
     }
 
     /// A polyglot machine can produce twenty groups. Open the three biggest and
@@ -107,14 +145,15 @@ struct ContentView: View {
 
     // MARK: - Header
 
-    /// Two rows, deliberately.
+    /// Two rows, deliberately — and each row folds into two of its own when
+    /// its language or text size needs more than the window gives it.
     ///
-    /// Everything here is `fixedSize` — a truncated control label reads as a bug,
-    /// so nothing is allowed to compress. That makes the row's width a hard
-    /// requirement, and one row carrying the summary, the gauge, three menus, the
-    /// search field *and* a four-segment picker needs ~1350pt before anything is
-    /// clipped. Splitting it in two brings the requirement down to ~780pt, which
-    /// fits every Mac at every text size.
+    /// Every control is `fixedSize` — a truncated control label reads as a bug,
+    /// so nothing is allowed to compress. That makes a row's width a hard
+    /// requirement, and one row carrying the summary, the gauge, four menus, the
+    /// search field *and* a four-segment picker needs ~1450pt before anything is
+    /// clipped. Splitting it in two, and letting each half wrap (`ViewThatFits`),
+    /// keeps the 900pt minimum honest in every shipped language.
     private var header: some View {
         VStack(spacing: 10) {
             summaryRow
@@ -125,161 +164,235 @@ struct ContentView: View {
     }
 
     /// What is on the disk, and the actions that change it.
+    ///
+    /// Same rule as `findRow`: one row when it fits, two when it does not —
+    /// the numbers on the first line, the buttons on the second. German,
+    /// French and Spanish labels are long enough that the sandbox build's
+    /// four buttons no longer share a row with the gauge at 900pt.
     private var summaryRow: some View {
-        HStack(alignment: .center, spacing: 18) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(Fmt.size(model.reclaimableBytes))
-                    .font(.system(size: 30, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                Text("could be freed · \(Fmt.size(model.safeBytes)) of it is safe")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 18) {
+                summaryBlock
+                Divider().frame(height: 36)
+                gauge
+                Spacer(minLength: 12)
+                actionButtons
             }
-            .fixedSize()
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 18) {
+                    summaryBlock
+                    Divider().frame(height: 36)
+                    gauge
+                    Spacer(minLength: 0)
+                }
+                HStack(alignment: .center, spacing: 18) {
+                    Spacer(minLength: 0)
+                    actionButtons
+                }
+            }
+        }
+    }
 
-            Divider().frame(height: 36)
+    private var summaryBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(Fmt.size(model.reclaimableBytes))
+                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .fixedSize()
+            // May wrap to a second line in longer languages; the number
+            // above never compresses.
+            Text("could be freed · \(Fmt.size(model.safeBytes)) of it is safe",
+                 comment: "Caption under the large reclaimable size, read together with it: '<size> could be freed · <size> of it is safe'. %@ is the size of the Safe items.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 230, alignment: .leading)
+        }
+    }
 
-            DiskGauge(disk: model.disk,
-                      selected: model.selectedBytes,
-                      trash: model.trashBytes)
+    private var gauge: some View {
+        DiskGauge(disk: model.disk,
+                  selected: model.selectedBytes,
+                  trash: model.trashBytes)
+    }
 
-            Spacer(minLength: 12)
-
-            // Sandbox build: let the user see and manage the folders they granted.
-            if model.isSandboxed {
-                Menu {
-                    if model.grantedRoots.isEmpty {
-                        Text("No folders granted yet")
-                    } else {
-                        Section("Folders DevSweep can scan") {
-                            ForEach(model.grantedRoots, id: \.path) { folder in
-                                Menu(short(folder)) {
-                                    Button("Reveal in Finder") {
-                                        NSWorkspace.shared.activateFileViewerSelecting([folder])
-                                    }
-                                    Button("Remove", role: .destructive) {
-                                        model.removeGrant(folder)
-                                    }
+    /// Folders (sandbox only), Tools, Language, Rescan. Every one is
+    /// `fixedSize` — a truncated control label reads as a bug.
+    @ViewBuilder
+    private var actionButtons: some View {
+        // Sandbox build: let the user see and manage the folders they granted.
+        if model.isSandboxed {
+            Menu {
+                if model.grantedRoots.isEmpty {
+                    Text("No folders granted yet")
+                } else {
+                    Section("Folders DevSweep can scan") {
+                        ForEach(model.grantedRoots, id: \.path) { folder in
+                            Menu(short(folder)) {
+                                Button("Reveal in Finder") {
+                                    NSWorkspace.shared.activateFileViewerSelecting([folder])
+                                }
+                                Button("Remove", role: .destructive) {
+                                    model.removeGrant(folder)
                                 }
                             }
                         }
                     }
-                    Divider()
-                    if !model.homeGranted {
-                        Button("Add Home Folder (finds all caches)…") {
-                            model.requestAccess(preferHome: true)
-                        }
-                    }
-                    Button("Add Another Folder…") { model.requestAccess() }
-                } label: {
-                    Label("Folders", systemImage: "folder")
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                // Granting or revoking a folder mid-scan would invalidate the
-                // scan in flight; wait it out.
-                .disabled(model.scanning)
-            }
-
-            Menu {
-                Button("Select all safe items") { model.selectAllSafe() }
-                Button("Clear selection") { model.clearSelection() }
                 Divider()
-                Button("Expand all groups") { collapsed.removeAll() }
-                Button("Collapse all groups") { collapsed = Set(model.groups.map(\.name)) }
-                Divider()
-
-                // Cleanups only the owning tool can perform. Everything above this
-                // line goes to the Trash; nothing below it does.
-                if model.pruneTools.isEmpty {
-                    Text("Looking for Docker, Homebrew…")
-                } else {
-                    Section("Run a tool's own cleanup") {
-                        ForEach(model.pruneTools) { tool in
-                            Button(pruneLabel(tool)) { pendingPrune = tool }
-                        }
-                    }
-                    // A prune tool deletes outright; not while anything else moves.
-                    .disabled(model.scanning || model.cleaning)
-                }
-
-                Divider()
-                Button("Exclude a folder from project scanning…") { pickExclusion() }
-                if !model.excluded.isEmpty {
-                    Menu("Stop excluding") {
-                        ForEach(model.excluded, id: \.path) { folder in
-                            Button(folder.lastPathComponent) { model.stopExcluding(folder) }
-                        }
+                if !model.homeGranted {
+                    Button("Add Home Folder (finds all caches)…") {
+                        model.requestAccess(preferHome: true)
                     }
                 }
-                Divider()
-                Button("Open Trash") {
-                    NSWorkspace.shared.open(SafetyGuard.trash)
-                }
+                Button("Add Another Folder…") { model.requestAccess() }
             } label: {
-                Label("Tools", systemImage: "ellipsis.circle")
+                Label("Folders", systemImage: "folder")
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-
-            Button {
-                model.rescan()
-            } label: {
-                Label("Rescan", systemImage: "arrow.clockwise")
-            }
-            .fixedSize()
+            // Granting or revoking a folder mid-scan would invalidate the
+            // scan in flight; wait it out.
             .disabled(model.scanning)
         }
+
+        Menu {
+            Button("Select all safe items") { model.selectAllSafe() }
+            Button("Clear selection") { model.clearSelection() }
+            Divider()
+            Button("Expand all groups") { collapsed.removeAll() }
+            Button("Collapse all groups") { collapsed = Set(model.groups.map(\.name)) }
+            Divider()
+
+            // Cleanups only the owning tool can perform. Everything above this
+            // line goes to the Trash; nothing below it does.
+            if model.pruneTools.isEmpty {
+                Text("Looking for Docker, Homebrew…", comment: "Tools menu placeholder while installed tools are probed. Product names.")
+            } else {
+                Section("Run a tool's own cleanup") {
+                    ForEach(model.pruneTools) { tool in
+                        Button(action: { pendingPrune = tool }) { Text(verbatim: pruneLabel(tool)) }
+                    }
+                }
+                // A prune tool deletes outright; not while anything else moves.
+                .disabled(model.scanning || model.cleaning)
+            }
+
+            Divider()
+            Button("Exclude a folder from project scanning…") { pickExclusion() }
+            if !model.excluded.isEmpty {
+                Menu("Stop excluding") {
+                    ForEach(model.excluded, id: \.path) { folder in
+                        Button(folder.lastPathComponent) { model.stopExcluding(folder) }
+                    }
+                }
+            }
+            Divider()
+            Button("Open Trash") {
+                NSWorkspace.shared.open(SafetyGuard.trash)
+            }
+        } label: {
+            Label("Tools", systemImage: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+
+        // The language switch, as its own button so nobody has to know it is
+        // inside Tools. The same list sits in the View menu.
+        Menu {
+            LanguageMenu(inline: true)
+        } label: {
+            Label("Language", systemImage: "globe")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(Text("Switch the language DevSweep runs in. The app relaunches; nothing is moved or deleted.",
+                   comment: "Tooltip on the Language button in the header."))
+
+        Button {
+            model.rescan()
+        } label: {
+            Label("Rescan", systemImage: "arrow.clockwise")
+        }
+        .fixedSize()
+        .disabled(model.scanning)
     }
 
     /// Narrowing the list: audience mode, search, live scan status, and the
     /// safety-tag filter.
+    ///
+    /// One row when it fits, two when it does not. The controls never compress
+    /// (a truncated label reads as a bug), so in a longer language — or at a
+    /// larger text size — the filter drops to a second line instead of pushing
+    /// the tabs off the left edge. The live status is the one flexible piece:
+    /// it takes whatever is left and truncates, and counts for nothing when
+    /// the row's width is measured (`idealWidth: 0`), so a long status never
+    /// flips the layout mid-scan.
     private var findRow: some View {
-        HStack(alignment: .center, spacing: 12) {
-            // Who the scan is for. Always clickable: switching mid-scan cancels
-            // the scan in flight and starts the new mode's straight after.
-            AudienceTabs(selection: model.audience) {
-                model.setAudience($0)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 12) {
+                modeAndSearch
+                Spacer(minLength: 12)
+                tagFilter
             }
-            .help("Developer: toolchains, caches and build output. System Data: app caches, logs and device backups.")
-
-            SearchField(text: $search, focused: $searchFocused)
-                .frame(minWidth: 150, idealWidth: 220, maxWidth: 260)
-                // An invisible button is the standard way to route a shortcut to
-                // a focus change; TextField cannot carry one itself.
-                .background(
-                    Button("") { searchFocused = true }
-                        .keyboardShortcut("f", modifiers: .command)
-                        .opacity(0)
-                )
-
-            if model.scanning || model.cleaning {
-                ProgressView().controlSize(.small)
-                // A move in progress is the more urgent thing to show; the scan
-                // status comes back the moment it finishes.
-                Text(model.cleaningStatus ?? model.status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: 420, alignment: .leading)
-            }
-
-            Spacer(minLength: 12)
-
-            Picker("", selection: $filter) {
-                Text("All").tag(SafetyTag?.none)
-                ForEach(SafetyTag.allCases, id: \.self) { tag in
-                    Text(tag.label).tag(SafetyTag?.some(tag))
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 12) {
+                    modeAndSearch
+                    Spacer(minLength: 0)
                 }
+                tagFilter
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            // Sized by its longest label ("Protected"), never cropped to a
-            // guessed width.
-            .fixedSize()
         }
+    }
+
+    @ViewBuilder
+    private var modeAndSearch: some View {
+        // Who the scan is for. Always clickable: switching mid-scan cancels
+        // the scan in flight and starts the new mode's straight after.
+        AudienceTabs(selection: model.audience) {
+            model.setAudience($0)
+        }
+        .help(Text("Developer: toolchains, caches and build output. System Data: app caches, logs and device backups.",
+                   comment: "Tooltip on the mode tabs. 'Developer' and 'System Data' must match the tab names."))
+
+        SearchField(text: $search, focused: $searchFocused)
+            .frame(minWidth: 150, idealWidth: 220, maxWidth: 260)
+            // An invisible button is the standard way to route a shortcut to
+            // a focus change; TextField cannot carry one itself.
+            .background(
+                Button(action: { searchFocused = true }) { EmptyView() }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .opacity(0)
+            )
+
+        if model.scanning || model.cleaning {
+            ProgressView().controlSize(.small)
+            // A move in progress is the more urgent thing to show; the scan
+            // status comes back the moment it finishes.
+            Text(verbatim: model.cleaningStatus ?? model.status)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(idealWidth: 0, maxWidth: 420, alignment: .leading)
+        }
+    }
+
+    private var tagFilter: some View {
+        Picker(selection: $filter) {
+            Text("All", comment: "Safety filter segment: show every row.").tag(SafetyTag?.none)
+            ForEach(SafetyTag.allCases, id: \.self) { tag in
+                Text(tag.label).tag(SafetyTag?.some(tag))
+            }
+        } label: {
+            EmptyView()
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        // Sized by its longest label ("Protected"), never cropped to a
+        // guessed width.
+        .fixedSize()
     }
 
     // MARK: - List
@@ -378,8 +491,11 @@ struct ContentView: View {
     }
 
     private func pruneLabel(_ tool: PruneTool) -> String {
-        guard let bytes = tool.reclaimable, bytes > 0 else { return tool.title + "…" }
-        return "\(tool.title)… — \(Fmt.size(bytes))"
+        guard let bytes = tool.reclaimable, bytes > 0 else {
+            return String(localized: "\(tool.title)…", comment: "Tools menu item. %@ is a prune tool name; the ellipsis means a confirmation follows.")
+        }
+        return String(localized: "\(tool.title)… — \(Fmt.size(bytes))",
+                      comment: "Tools menu item. %1$@ is a prune tool name, %2$@ the size it says it can free.")
     }
 
     private var maxBytes: Int64 {
@@ -413,7 +529,7 @@ struct ContentView: View {
             Spacer()
 
             if !model.selected.isEmpty {
-                Button("Clear") { model.clearSelection() }
+                Button(action: model.clearSelection) { Text("Clear", comment: "Footer link: clears the selection.") }
                     .buttonStyle(.link)
             }
 
@@ -427,7 +543,7 @@ struct ContentView: View {
                     confirming = true
                 }
             } label: {
-                Text(mainButtonTitle)
+                Text(verbatim: mainButtonTitle)
                     .frame(minWidth: 240)
             }
             .fixedSize()
@@ -444,12 +560,14 @@ struct ContentView: View {
     private var mainButtonTitle: String {
         if !model.selected.isEmpty {
             let n = model.selectedItems.count
-            return "Move \(n) item\(n == 1 ? "" : "s") to Trash — \(Fmt.size(model.selectedBytes))"
+            return String(localized: "Move \(n) items to Trash — \(Fmt.size(model.selectedBytes))",
+                          comment: "Main button. %1$lld is the number of selected items, %2$@ their total size.")
         }
         if model.safeBytes > 0 {
-            return "Select everything safe — \(Fmt.size(model.safeBytes))"
+            return String(localized: "Select everything safe — \(Fmt.size(model.safeBytes))",
+                          comment: "Main button when nothing is selected yet. %@ is the total size of the Safe items.")
         }
-        return "Nothing to clean"
+        return String(localized: "Nothing to clean", comment: "Main button when the scan found nothing removable; disabled.")
     }
 
     private func pickExclusion() {
@@ -458,8 +576,9 @@ struct ContentView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.directoryURL = SafetyGuard.home
-        panel.prompt = "Exclude"
-        panel.message = "DevSweep already scans your whole home folder for build output. Pick a folder you would rather it left alone."
+        panel.prompt = String(localized: "Exclude", comment: "Folder picker button: exclude the chosen folder from project scanning.")
+        panel.message = String(localized: "DevSweep already scans your whole home folder for build output. Pick a folder you would rather it left alone.",
+                               comment: "Folder picker message for excluding a folder.")
         if panel.runModal() == .OK, let url = panel.url {
             model.exclude(url)
         }
@@ -469,7 +588,7 @@ struct ContentView: View {
     private func short(_ url: URL) -> String {
         let home = SandboxAccess.realHome.path
         let path = url.standardizedFileURL.path
-        if path == home { return "Home folder (~)" }
+        if path == home { return String(localized: "Home folder (~)", comment: "Name of the home folder in the Folders menu. Keep the (~).") }
         return path.replacingOccurrences(of: home + "/", with: "~/")
     }
 }
@@ -498,7 +617,8 @@ private struct DiskGauge: View {
                         .monospacedDigit()
                         .contentTransition(.numericText())
                         .foregroundStyle(runningLow(disk) ? Color.orange : Color.primary)
-                    Text("free of \(Fmt.size(disk.total))")
+                    Text("free of \(Fmt.size(disk.total))",
+                         comment: "Follows the free-space figure in the disk gauge, read as '<free size> free of <total size>'. %@ is the disk's total size.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -506,16 +626,18 @@ private struct DiskGauge: View {
 
                 bar(disk)
 
-                Text(caption)
+                Text(verbatim: caption)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .fixedSize()
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(minWidth: width, alignment: .leading)
-            .help("\(Fmt.size(disk.used)) used, \(Fmt.size(disk.free)) free.")
+            .help(Text("\(Fmt.size(disk.used)) used, \(Fmt.size(disk.free)) free.",
+                       comment: "Tooltip on the disk gauge. %1$@ used size, %2$@ free size."))
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Disk space")
-            .accessibilityValue("\(Fmt.size(disk.free)) free of \(Fmt.size(disk.total)). \(caption)")
+            .accessibilityLabel(Text("Disk space", comment: "Accessibility label of the disk gauge."))
+            .accessibilityValue(Text("\(Fmt.size(disk.free)) free of \(Fmt.size(disk.total)). \(caption)",
+                                     comment: "Accessibility value of the disk gauge. %1$@ free size, %2$@ total size, %3$@ the gauge caption."))
         }
     }
 
@@ -545,12 +667,13 @@ private struct DiskGauge: View {
 
     private var caption: String {
         if selected > 0 {
-            return "\(Fmt.size(selected)) selected — freed once emptied"
+            return String(localized: "\(Fmt.size(selected)) selected — freed once emptied",
+                          comment: "Disk gauge caption. %@ is the size of the selection; it is freed only when the Trash is emptied.")
         }
         if trash > 0 {
-            return "\(Fmt.size(trash)) already in the Trash"
+            return String(localized: "\(Fmt.size(trash)) already in the Trash", comment: "Disk gauge caption. %@ is the size of the Trash's contents.")
         }
-        return "\(Fmt.size(disk?.used ?? 0)) used"
+        return String(localized: "\(Fmt.size(disk?.used ?? 0)) used", comment: "Disk gauge caption. %@ is the used size of the disk.")
     }
 }
 
@@ -648,11 +771,12 @@ private struct GroupHeader: View {
                     .foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(collapsed ? 0 : 90))
                     .frame(width: 10)
-                Text(group.name.uppercased())
+                Text(verbatim: Catalog.groupDisplayName(group.name))
+                    .textCase(.uppercase)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .tracking(0.6)
-                Text("\(group.items.count)")
+                Text(group.items.count, format: .number)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
                 Spacer()
@@ -692,8 +816,20 @@ private struct NoMatches: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Nothing here is tagged \(filter?.label ?? "that").").font(.headline)
-                    .fixedSize(horizontal: false, vertical: true)
+                Group {
+                    switch filter {
+                    case .safe?:
+                        Text("Nothing here is tagged Safe.", comment: "Empty state for the Safe filter. 'Safe' must match the badge.")
+                    case .review?:
+                        Text("Nothing here is tagged Review.", comment: "Empty state for the Review filter. 'Review' must match the badge.")
+                    case .never?:
+                        Text("Nothing here is tagged Protected.", comment: "Empty state for the Protected filter. 'Protected' must match the badge.")
+                    case nil:
+                        Text("Nothing matches the current filter.", comment: "Empty state fallback.")
+                    }
+                }
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
                 Text("Pick another tag, or All to see everything found.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -743,10 +879,8 @@ private struct ItemRow: View {
                     on: model.isSelected(entry),
                     partial: model.isPartiallySelected(entry)
                 ) { model.toggle(entry) }
-                    .accessibilityLabel(Text("Select \(entry.title)"))
-                    .accessibilityValue(model.isSelected(entry) ? "selected"
-                        : model.isPartiallySelected(entry) ? "partially selected"
-                        : "not selected")
+                    .accessibilityLabel(Text("Select \(entry.title)", comment: "Accessibility label of a row's checkbox. %@ is the row title."))
+                    .accessibilityValue(checkboxState(for: entry))
             }
 
             if isParent {
@@ -766,7 +900,9 @@ private struct ItemRow: View {
                 }
                 .buttonStyle(.plain)
                 .padding(-8)
-                .accessibilityLabel(isExpanded ? "Collapse \(entry.title)" : "Expand \(entry.title)")
+                .accessibilityLabel(isExpanded
+                    ? Text("Collapse \(entry.title)", comment: "Accessibility label of a row's disclosure chevron. %@ is the row title.")
+                    : Text("Expand \(entry.title)", comment: "Accessibility label of a row's disclosure chevron. %@ is the row title."))
             } else if indent == 0 {
                 Color.clear.frame(width: 12, height: 1)
             }
@@ -783,7 +919,7 @@ private struct ItemRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if isParent && !isExpanded {
-                    Text("\(entry.children.count) item\(entry.children.count == 1 ? "" : "s")")
+                    Text("\(entry.children.count) items", comment: "Under a collapsed container row: how many child rows it holds.")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -818,6 +954,16 @@ private struct ItemRow: View {
             }
         }
         .help(entry.url.path.replacingOccurrences(of: SafetyGuard.home.path, with: "~"))
+    }
+
+    private func checkboxState(for entry: ScanItem) -> Text {
+        if model.isSelected(entry) {
+            return Text("selected", comment: "Accessibility value of a ticked checkbox.")
+        }
+        if model.isPartiallySelected(entry) {
+            return Text("partially selected", comment: "Accessibility value of a container whose children are partly ticked.")
+        }
+        return Text("not selected", comment: "Accessibility value of an unticked checkbox.")
     }
 }
 
@@ -887,7 +1033,8 @@ struct TagBadge: View {
     let tag: SafetyTag
 
     var body: some View {
-        Text(tag.label.uppercased())
+        Text(verbatim: tag.label)
+            .textCase(.uppercase)
             .font(.system(size: 9, weight: .bold))
             .tracking(0.5)
             .foregroundStyle(fg)
@@ -948,11 +1095,13 @@ private struct ReportBanner: View {
             Image(systemName: report.failures.isEmpty ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(report.failures.isEmpty ? .green : .orange)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Moved \(report.moved) item\(report.moved == 1 ? "" : "s") to the Trash — \(Fmt.size(report.freed)) recoverable until you empty it.")
+                Text("Moved \(report.moved) items to the Trash — \(Fmt.size(report.freed)) recoverable until you empty it.",
+                     comment: "Banner after a move. %1$lld is the number of items, %2$@ their size.")
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
                 if !report.failures.isEmpty {
-                    Text("\(report.failures.count) could not be moved: \(report.failures.prefix(2).map { $0.url.lastPathComponent }.joined(separator: ", "))")
+                    Text("\(report.failures.count) could not be moved: \(report.failures.prefix(2).map { $0.url.lastPathComponent }.formatted(.list(type: .and, width: .narrow)))",
+                         comment: "Banner line for failed moves. %1$lld is the number of failures, %2$@ up to two folder names.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -961,10 +1110,10 @@ private struct ReportBanner: View {
             Spacer()
             // The one undo: everything the report moved goes back where it was.
             if report.moved > 0 {
-                Button("Put Back") { putBack() }
+                Button(action: putBack) { Text("Put Back", comment: "Banner link: the one undo — restores everything the last cleanup moved.") }
                     .buttonStyle(.link)
                     .disabled(busy)
-                    .help("Restores every item from this cleanup to where it came from.")
+                    .help(Text("Restores every item from this cleanup to where it came from.", comment: "Tooltip on Put Back."))
             }
             Button("Open Trash") {
                 NSWorkspace.shared.open(SafetyGuard.trash)
@@ -1060,21 +1209,41 @@ private struct GrantAccess: View {
             Image(systemName: followup ? "folder.badge.plus" : "folder.badge.questionmark")
                 .font(.system(size: 44))
                 .foregroundStyle(.tint)
-            Text(followup ? "No caches in the folders you added" : "Grant a folder to scan")
+            Group {
+                if followup {
+                    Text("No caches in the folders you added", comment: "Empty state title when granted folders held no caches.")
+                } else {
+                    Text("Grant a folder to scan", comment: "First-run title in the App Store build: no folder granted yet.")
+                }
+            }
                 .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(followup
-                 ? "Developer caches live under your **Home folder** (Xcode, npm, Gradle, and the rest). Add it to let DevSweep find them — you can still remove it later."
-                 : "DevSweep only looks where you let it. Choose your **Home folder** to cover every cache, or a single project or cache directory to keep it narrow. You can add or remove folders any time.")
+            Group {
+                if followup {
+                    Text("Developer caches live under your **Home folder** (Xcode, npm, Gradle, and the rest). Add it to let DevSweep find them — you can still remove it later.",
+                         comment: "Empty state text when granted folders held no caches. Markdown bold; tool names stay.")
+                } else {
+                    Text("DevSweep only looks where you let it. Choose your **Home folder** to cover every cache, or a single project or cache directory to keep it narrow. You can add or remove folders any time.",
+                         comment: "First-run text in the App Store build. Markdown bold.")
+                }
+            }
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 440)
             Button(action: grant) {
-                Label(followup ? "Add Home Folder…" : "Choose Folder…", systemImage: "folder")
-                    .padding(.horizontal, 6)
+                Label {
+                    if followup {
+                        Text("Add Home Folder…", comment: "Button that opens the folder picker on the home folder.")
+                    } else {
+                        Text("Choose Folder…", comment: "Button that opens the folder picker.")
+                    }
+                } icon: {
+                    Image(systemName: "folder")
+                }
+                .padding(.horizontal, 6)
             }
             .controlSize(.large)
             .buttonStyle(.borderedProminent)
@@ -1120,7 +1289,7 @@ private struct ConfirmSheet: View {
 
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Move \(items.count) item\(items.count == 1 ? "" : "s") to the Trash?")
+                Text("Move \(items.count) items to the Trash?", comment: "Confirmation sheet title. %lld is the number of selected items.")
                     .font(.title3.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 Text("\(Fmt.size(model.selectedBytes)) will be freed once you empty the Trash. Until then everything below is recoverable.")
@@ -1133,7 +1302,8 @@ private struct ConfirmSheet: View {
             if !review.isEmpty {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    Text("\(review.count) of these are tagged **Review** — they take real time or bandwidth to rebuild.")
+                    Text("\(review.count) of these are tagged **Review** — they take real time or bandwidth to rebuild.",
+                         comment: "Confirmation sheet warning. %lld is the number of Review items; the bold word must match the Review badge.")
                         .font(.callout)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
@@ -1183,9 +1353,11 @@ private struct ConfirmSheet: View {
                 Spacer()
                 Button("Cancel") { isPresented = false }
                     .keyboardShortcut(.cancelAction)
-                Button("Move to Trash") {
+                Button(action: {
                     isPresented = false
                     model.trashSelected()
+                }) {
+                    Text("Move to Trash", comment: "Confirmation sheet's confirm button. Same wording as the welcome sheet's step 3.")
                 }
                 .keyboardShortcut(.defaultAction)
             }

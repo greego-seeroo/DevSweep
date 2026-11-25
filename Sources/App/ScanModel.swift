@@ -10,7 +10,7 @@ final class ScanModel: ObservableObject {
     /// Something is being moved — to the Trash, back out of it, or by a prune
     /// tool. One such job at a time; scans run alongside.
     @Published var cleaning = false
-    @Published var status = "Ready."
+    @Published var status = String(localized: "Ready.", comment: "Initial status line before any scan.")
     @Published var cleaningStatus: String?
     /// When the rows on screen were measured. Set from the remembered scan at
     /// launch, then from each completed scan.
@@ -41,7 +41,12 @@ final class ScanModel: ObservableObject {
     private let excludedKey = "excludedFolders"
     private let audienceKey = "audience"
 
+    /// The model behind the window, for the app delegate: it must not let the
+    /// process quit while this model is half way through moving things.
+    static weak var current: ScanModel?
+
     init() {
+        ScanModel.current = self
         // Re-open any folders the user granted in a previous session. No-op outside
         // the sandbox, where the whole home directory is reachable already.
         SandboxAccess.loadGrants()
@@ -94,7 +99,7 @@ final class ScanModel: ObservableObject {
         showRemembered(for: new)
         if scanning {
             scanCancel?.cancel()
-            status = "Loading \(new.label)…"
+            status = String(localized: "Loading \(new.label)…", comment: "Status while switching mode. %@ is the mode name (Developer / System Data).")
         }
         rescan()
     }
@@ -129,8 +134,12 @@ final class ScanModel: ObservableObject {
             groups = []
             selected.removeAll()
             needsAccess = true
-            status = "Grant DevSweep a folder to scan."
+            status = Self.grantStatus
         }
+    }
+
+    private static var grantStatus: String {
+        String(localized: "Grant DevSweep a folder to scan.", comment: "Status line in the App Store build before any folder has been granted.")
     }
 
     // MARK: - Derived
@@ -212,10 +221,14 @@ final class ScanModel: ObservableObject {
         // Sandbox build: nothing is reachable until the user grants a folder.
         guard SandboxAccess.hasAccess else {
             needsAccess = true
-            status = "Grant DevSweep a folder to scan."
+            status = Self.grantStatus
             return
         }
         needsAccess = false
+        // The watcher could not be armed at launch if the Trash was out of reach
+        // then (sandbox, before the first grant). Now that something is granted,
+        // try again — a no-op once it is watching.
+        watchTrash()
 
         scanning = true
         status = Self.openingStatus(remembered: groups.isEmpty ? nil : lastScanDate)
@@ -258,7 +271,9 @@ final class ScanModel: ObservableObject {
                     self.disk = space
                     self.trashBytes = trash
                     self.lastTrashMtime = Self.trashMtime()
-                    if audience == .developer { self.status = "Scanning your projects…" }
+                    if audience == .developer {
+                        self.status = String(localized: "Scanning your projects…", comment: "Status while the project folders are walked for build output.")
+                    }
                 }
             }
 
@@ -276,7 +291,7 @@ final class ScanModel: ObservableObject {
                     let stillValid = Set(scanned.flatMap(\.items).flatMap(\.deletableLeaves).map(\.id))
                     self.selected.formIntersection(stillValid)
                     self.groups = scanned
-                    self.status = "Scanned \(scanned.count) categories."
+                    self.status = String(localized: "Scanned \(scanned.count) categories.", comment: "Status after a scan. %lld is the number of groups found.")
                     self.lastScanDate = Date()
                     ScanCache.save(scanned, audience: audience)
 
@@ -288,7 +303,7 @@ final class ScanModel: ObservableObject {
                     if runCatalog, AutoMode.shouldSwitchToSystemData(
                         groups: scanned, audience: audience, userPicked: self.userPickedAudience) {
                         self.audience = .everyday
-                        self.status = "No developer caches here — showing System Data."
+                        self.status = String(localized: "No developer caches here — showing System Data.", comment: "Status when the app switches to System Data mode by itself. 'System Data' must match the mode name.")
                         self.rescanQueued = true
                     }
                 }
@@ -319,7 +334,7 @@ final class ScanModel: ObservableObject {
         let items = selectedItems
         guard !items.isEmpty, !cleaning else { return }
         cleaning = true
-        cleaningStatus = "Moving \(items.count) item\(items.count == 1 ? "" : "s") to the Trash…"
+        cleaningStatus = String(localized: "Moving \(items.count) items to the Trash…", comment: "Status while items move. %lld is the number of items.")
 
         Task.detached(priority: .userInitiated) {
             let report = Scanner.trash(items)
@@ -338,7 +353,7 @@ final class ScanModel: ObservableObject {
                 self.cleaning = false
                 self.cleaningStatus = nil
                 if !self.scanning {
-                    self.status = "Moved \(report.moved) item\(report.moved == 1 ? "" : "s") to the Trash."
+                    self.status = String(localized: "Moved \(report.moved) items to the Trash.", comment: "Status after a move. %lld is the number of items.")
                 }
             }
         }
@@ -350,16 +365,17 @@ final class ScanModel: ObservableObject {
         guard let report = lastReport, !report.moves.isEmpty, !scanning, !cleaning else { return }
         lastReport = nil
         cleaning = true
-        cleaningStatus = "Putting \(report.moved) item\(report.moved == 1 ? "" : "s") back…"
+        cleaningStatus = String(localized: "Putting \(report.moved) items back…", comment: "Status while Put Back restores items from the Trash. %lld is the number of items.")
 
         Task.detached(priority: .userInitiated) {
             let result = Scanner.restore(report)
             await MainActor.run {
                 self.cleaning = false
                 self.cleaningStatus = nil
+                let putBack = String(localized: "Put back \(result.restored) items.", comment: "Status after Put Back. %lld is the number of items restored.")
                 self.status = result.skipped == 0
-                    ? "Put back \(result.restored) item\(result.restored == 1 ? "" : "s")."
-                    : "Put back \(result.restored) — \(result.skipped) could not go back."
+                    ? putBack
+                    : putBack + " " + String(localized: "\(result.skipped) could not go back.", comment: "Appended to the Put Back status when some items could not be restored. %lld is that number.")
                 self.rescan()
             }
         }
@@ -378,10 +394,13 @@ final class ScanModel: ObservableObject {
     /// What the status line says as a scan starts: a plain "Measuring" on an
     /// empty list, or how old the rows already on screen are.
     nonisolated static func openingStatus(remembered: Date?) -> String {
-        guard let remembered else { return "Measuring caches…" }
+        guard let remembered else {
+            return String(localized: "Measuring caches…", comment: "Status at the start of a scan when the list is empty.")
+        }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
-        return "Refreshing results from \(formatter.localizedString(for: remembered, relativeTo: Date()))…"
+        let age = formatter.localizedString(for: remembered, relativeTo: Date())
+        return String(localized: "Refreshing results from \(age)…", comment: "Status at the start of a rescan. %@ is a relative time such as '2 hours ago'.")
     }
 
     /// Cheap catch-up when the user comes back from Finder or a terminal: rows
@@ -433,8 +452,10 @@ final class ScanModel: ObservableObject {
 
     /// Watches ~/.Trash so emptying the bin updates the gauge and footer at once,
     /// even while DevSweep stays frontmost — app activation alone would miss it.
-    /// Fails silently where the Trash is unreachable (sandbox without a grant).
+    /// Fails silently where the Trash is unreachable (sandbox without a grant);
+    /// `rescan` calls it again once a folder has been granted.
     private func watchTrash() {
+        guard trashWatch == nil else { return }
         let path = SafetyGuard.trash.path
         let fd = open(path, O_EVTONLY)
         guard fd >= 0 else { return }
@@ -492,7 +513,7 @@ final class ScanModel: ObservableObject {
     func runPrune(_ tool: PruneTool) {
         guard !scanning, !cleaning else { return }
         cleaning = true
-        cleaningStatus = "Running \(tool.title)…"
+        cleaningStatus = String(localized: "Running \(tool.title)…", comment: "Status while a prune tool runs. %@ is the tool name.")
 
         Task.detached(priority: .userInitiated) {
             let message = Scanner.runPrune(tool)

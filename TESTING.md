@@ -14,7 +14,7 @@ sweeps any left behind by an earlier crashed run.
 
 | # | Area | What it proves |
 |---|------|----------------|
-| 1 | Safety guard | Protected folders, credentials, paths outside $HOME, `..` traversal and symlink escapes are all refused; legitimate caches are allowed |
+| 1 | Safety guard | Protected folders, credentials, paths outside $HOME, `..` traversal, differently-cased spellings of protected folders, symlink escapes and symlinks that land on a protected folder are all refused; legitimate caches are allowed, including through a symlink |
 | 2 | Scan items | Rows on protected paths offer nothing for deletion, containers filter children through the guard |
 | 3 | Project walker | Real build output is detected by marker evidence; same-named source folders (`bin` of shell scripts, `dist` of plain HTML…) are left alone; exclusions honoured; symlinked artifacts skipped |
 | 4 | Catalog integrity | Every rule's group is ordered, no duplicate/absolute/traversing paths, every non-Protected rule passes the guard |
@@ -23,6 +23,7 @@ sweeps any left behind by an earlier crashed run.
 | 6b | Sharded sizing | The parallel, sharded walk equals the single walk and `du -sk -x` byte for byte on a deep fixture with loose files, a symlink and an empty folder; progress callbacks report consistent done/known/pending; a folder trashed mid-walk neither hangs nor corrupts the other folder's total |
 | 6c | Merging streamed rows | Remeasured rows replace their old versions in place, unreached rows keep their old size, new rows and groups are appended; a row trashed mid-scan never comes back from a partial |
 | 6d | Measuring status | The status line is a plain count until the last three folders, then names them |
+| 6f | Localization catalog | `Resources/Localizable.xcstrings` and `InfoPlist.xcstrings`: every translatable key has German, Japanese, French and Spanish, every translation keeps the English `%@` / `%lld` placeholders (plural variants too), count-based strings carry plural forms, nothing is stale; the Safe / Review / Protected vocabulary and the group headings resolve |
 | 6e | Remembered scan | A scan round-trips through the JSON file with groups, order, titles, notes, bytes, tags, children and Protected rows; rows and children whose folder vanished are dropped on load; the other mode, an empty result, a corrupt file and a newer schema all load as nothing |
 | 7 | Cancellation | A cancelled sizing run measures nothing; a cancelled project scan returns nothing; an uncancelled flag changes nothing |
 | 8 | Disk space | Reads succeed repeatedly (regression: the cached-URL bug returned the first reading forever); free ≤ total |
@@ -55,7 +56,7 @@ sweeps any left behind by an earlier crashed run.
 - [ ] In System Data mode: no project artifacts. (Prune tools are never offered in the sandboxed build; in an unsandboxed build the Tools menu keeps whatever the last Developer scan found — known gap.)
 
 ### C. Free space (the original bug)
-- [ ] Move items to Trash in DevSweep, then empty the Trash in Finder: the free-space number rises **by itself within a few seconds** — no Rescan click needed, even with DevSweep frontmost. (On the very first sandboxed launch the Trash watcher is armed before the Home grant exists, so this only works from the second launch — known gap.)
+- [ ] Move items to Trash in DevSweep, then empty the Trash in Finder: the free-space number rises **by itself within a few seconds** — no Rescan click needed, even with DevSweep frontmost. This must also hold on the **very first sandboxed launch**, right after granting the Home folder (the watcher is armed again once a grant exists).
 - [ ] The footer's "Trash holds X" line drops to the empty-Trash message at the same time.
 - [ ] Rescan after any external deletion (e.g. `rm -rf` a cache in Terminal) shows updated free space.
 - [ ] Every **Open Trash** button (Tools menu, footer, cleanup banner) opens the real `~/.Trash` in Finder in the sandboxed build.
@@ -78,6 +79,7 @@ sweeps any left behind by an earlier crashed run.
 - [ ] **Put Back** on the banner restores every item of the last cleanup to its original place, the rows reappear after the automatic rescan, and the Trash no longer holds them.
 - [ ] Put Back is still offered after a Rescan or a mode switch (the record is only lost on quit). While a scan or move is running the button is disabled, not silently ignored.
 - [ ] Put Back when a tool already rebuilt one of the directories: that item is skipped (stays in the Trash) and the rest restore. (The "N could not go back" status is overwritten by the automatic rescan before it can be seen — known gap.)
+- [ ] Press Cmd-Q (or close the window) while "Moving N items…" or "Putting N items back…" is showing: the app finishes the move first and then quits by itself. Nothing is left half-moved, and the Trash holds every item of the cleanup.
 - [ ] Restore something from the Trash by hand in Finder, click Rescan: it reappears.
 - [ ] Protected rows always show a lock and can never be ticked, in both modes.
 
@@ -99,3 +101,53 @@ sweeps any left behind by an earlier crashed run.
 - [ ] Full developer scan on a loaded dev machine finishes in seconds, not minutes (App Store build included — the fts walker replaced the slow FileManager walk).
 - [ ] Caches full of app bundles (Playwright/Electron) report realistic sizes, matching `du -sh` within a few percent.
 - [ ] Re-activating the app repeatedly with a very full Trash does not re-walk the Trash each time (mtime debounce).
+
+### I. Localization (German, Japanese, French, Spanish)
+
+The app ships English plus `de`, `ja`, `fr`, `es`. Strings live in
+`Resources/Localizable.xcstrings`; `Scripts/extract-strings.sh` pulls new
+keys out of the code, `Scripts/build.sh` compiles the catalog into
+`<lang>.lproj` exactly as Xcode does.
+
+0. **First launch.** `defaults delete com.greego.devesweep devsweep.welcomeSeen.v2`
+   and relaunch: the welcome sheet opens on a "Choose your language" page with
+   System Language, English, Deutsch, 日本語, Français, Español as radio
+   buttons. Picking one restarts the app at once and reopens the welcome on
+   the same page in that language; Next continues the intro. Skip or Get
+   Started marks the welcome seen; the language stays.
+1. **Pseudo-languages (Xcode).** Product ▸ Scheme ▸ Edit Scheme ▸ Run ▸
+   Options ▸ App Language = *Double-Length Pseudolanguage*. Run. Header: no
+   control is clipped at the 900 pt minimum width (shrink the window to it);
+   the summary caption wraps to two lines instead of pushing the Rescan
+   button out; the segmented filter, tabs and Tools/Folders menus stay whole.
+   Footer: the main button grows, the Trash sentence wraps. Confirm sheet and
+   welcome sheet: text wraps, nothing is cut, buttons stay visible. Repeat with
+   *Right-to-Left Pseudolanguage*: layout mirrors (chevrons, badges on the
+   left), numbers stay readable, the size bar still fills from the leading edge.
+   The same from the terminal:
+   `open DevSweep.app --args -NSDoubleLocalizedStrings YES` and
+   `open DevSweep.app --args -NSForceRightToLeftWritingDirection YES -AppleTextDirection YES`.
+2. **A real language.** Click the **Language** button (globe) in the header, or View ▸ Language, and pick Deutsch → the alert "Switch
+   language to Deutsch?" appears in the *current* language (the switch has not
+   happened yet) → Relaunch. The app quits and reopens in German with the remembered rows,
+   `System Settings ▸ Language & Region ▸ Applications` is not touched. Walk
+   the welcome sheet (`defaults delete com.greego.devesweep devsweep.welcomeSeen.v2`
+   to see it again): Markdown bold survives, paragraphs keep their blank
+   lines. Check the safety vocabulary is consistent everywhere: badges, filter
+   segments, the explainer under a filter, the confirm sheet's bold **Review**
+   warning and the welcome page "Safe by design" all use the same three words.
+   Sizes use the locale's decimal separator ("1,2 GB"); the status line's
+   relative time ("vor 2 Stunden") is in the language. Repeat for 日本語,
+   Français, Español. Language ▸ System Language puts it back.
+   Terminal shortcut, no relaunch dance: `open DevSweep.app --args -AppleLanguages '(ja)'`.
+3. **Plurals.** Tick exactly one row: main button says "1 item" in the
+   singular form of the language; tick two: plural. Move one item: banner and
+   status in the singular. French treats 0 and 1 as singular.
+4. **Untranslated residue.** With a language active, search the list for
+   English-only words such as "cache" in Japanese mode: group headings, row
+   titles and notes are translated; folder names (DerivedData, node_modules),
+   tool names, bundle ids and paths are not, by design.
+5. **Permission prompts.** First read of Desktop/Documents/Downloads in the
+   active language shows the translated usage description (from
+   `InfoPlist.xcstrings`). Reset with `tccutil reset SystemPolicyDesktopFolder com.greego.devesweep`.
+

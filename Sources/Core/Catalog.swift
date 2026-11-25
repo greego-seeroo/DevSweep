@@ -11,8 +11,12 @@ enum Audience: String, CaseIterable {
     /// trying to shrink, so that is the word the switch uses.
     var label: String {
         switch self {
-        case .developer: return "Developer"
-        case .everyday: return "System Data"
+        case .developer:
+            return String(localized: "Developer",
+                          comment: "Mode tab: the scan for developer toolchains and build output. Keep short.")
+        case .everyday:
+            return String(localized: "System Data",
+                          comment: "Mode tab: the scan for app caches, logs and device backups. Use the exact term macOS System Settings ▸ General ▸ Storage shows for 'System Data' in this language.")
         }
     }
 
@@ -28,12 +32,17 @@ enum Audience: String, CaseIterable {
 /// A known location on a developer machine, with a hand-written verdict on
 /// whether losing it costs you anything.
 struct Rule {
+    /// Stable English group key — never shown directly; see `Catalog.groupDisplayName`.
     let group: String
-    let title: String
+    /// Row title, localized at scan time. A plain literal is extracted as-is;
+    /// wrap it in `LocalizedStringResource(_:comment:)` when it needs a note.
+    let title: LocalizedStringResource
     /// Path relative to the user's home directory.
     let relPath: String
     let tag: SafetyTag
-    let note: String
+    /// Row subtitle, localized at scan time. Back-ticked commands, tool names
+    /// and folder names inside it stay as they are.
+    let note: LocalizedStringResource
     /// List the directory's immediate children as individually selectable rows.
     var expand: Bool = false
 }
@@ -55,7 +64,8 @@ struct ProjectArtifact {
     /// Require every marker rather than any one of them.
     var requiresAll: Bool = false
     let tag: SafetyTag
-    let note: String
+    /// Row subtitle, localized at scan time.
+    let note: LocalizedStringResource
 }
 
 enum Catalog {
@@ -87,6 +97,40 @@ enum Catalog {
         "Logs & diagnostics",
         "iPhone & iPad backups",
     ]
+
+    /// The heading shown for a group. Group names are stable English keys —
+    /// they identify groups in the scan cache, the collapsed set and the tests
+    /// — so the translation is looked up only here, at display time. Names
+    /// that are purely a product are marked "do not translate" in the catalog.
+    static func groupDisplayName(_ name: String) -> String {
+        switch name {
+        case "Xcode": return String(localized: "Xcode", comment: "Group heading. Product name, do not translate.")
+        case "Simulators": return String(localized: "Simulators", comment: "Group heading: iOS/watchOS/tvOS simulator runtimes and devices.")
+        case "Flutter & Dart": return String(localized: "Flutter & Dart", comment: "Group heading. Product names, keep them.")
+        case "Android": return String(localized: "Android", comment: "Group heading. Product name, do not translate.")
+        case "JVM & Gradle": return String(localized: "JVM & Gradle", comment: "Group heading. Product names, keep them.")
+        case "Node & web": return String(localized: "Node & web", comment: "Group heading: Node.js and web front-end tooling. 'Node' is a product name.")
+        case "Python": return String(localized: "Python", comment: "Group heading. Product name, do not translate.")
+        case "Rust": return String(localized: "Rust", comment: "Group heading. Product name, do not translate.")
+        case "Go": return String(localized: "Go", comment: "Group heading. The Go programming language, do not translate.")
+        case "Ruby": return String(localized: "Ruby", comment: "Group heading. Product name, do not translate.")
+        case ".NET": return String(localized: ".NET", comment: "Group heading. Product name, do not translate.")
+        case "PHP": return String(localized: "PHP", comment: "Group heading. Product name, do not translate.")
+        case "C, C++ & native": return String(localized: "C, C++ & native", comment: "Group heading: C, C++ and other natively compiled toolchains.")
+        case "Containers & infrastructure": return String(localized: "Containers & infrastructure", comment: "Group heading: Docker, Kubernetes, Terraform and similar.")
+        case "Editors & IDEs": return String(localized: "Editors & IDEs", comment: "Group heading: code editors and integrated development environments.")
+        case "Game engines": return String(localized: "Game engines", comment: "Group heading: Unity, Unreal and similar.")
+        case "AI & ML models": return String(localized: "AI & ML models", comment: "Group heading: downloaded machine-learning models and caches.")
+        case "Package managers": return String(localized: "Package managers", comment: "Group heading: Homebrew, Nix and similar.")
+        case "Version managers": return String(localized: "Version managers", comment: "Group heading: tools that install several versions of a language (nvm, pyenv, rbenv…).")
+        case "Other caches": return String(localized: "Other caches", comment: "Group heading for caches that fit no other group.")
+        case "Project artifacts": return String(localized: "Project artifacts", comment: "Group heading: build output found inside the user's own project folders (node_modules, target, build…).")
+        case "App caches": return String(localized: "App caches", comment: "Group heading in System Data mode: caches written by ordinary apps.")
+        case "Logs & diagnostics": return String(localized: "Logs & diagnostics", comment: "Group heading in System Data mode.")
+        case "iPhone & iPad backups": return String(localized: "iPhone & iPad backups", comment: "Group heading in System Data mode: device backups made by Finder.")
+        default: return name
+        }
+    }
 
     // MARK: - Everyday catalog
 
@@ -842,7 +886,8 @@ enum Catalog {
         guard exists(cache), let rel = relativeToHome(cache.path) else { return nil }
         return Rule(
             group: "Flutter & Dart",
-            title: "Flutter SDK cache (\(sdk.lastPathComponent))",
+            title: LocalizedStringResource("Flutter SDK cache (\(sdk.lastPathComponent))",
+                                           comment: "Row title. %@ is the folder name the Flutter SDK is installed in."),
             relPath: rel,
             tag: .review,
             note: "Downloaded engine artifacts, the bundled Dart SDK and toolchain binaries for every platform you have built for. Restored by `flutter precache` / the next build, but it is a large download and `flutter` will not run until it finishes."
@@ -939,7 +984,8 @@ enum Catalog {
             if exists(pkgs), let rel = relativeToHome(pkgs.path) {
                 out.append(Rule(
                     group: "Python",
-                    title: "Conda package cache (\(root.lastPathComponent))",
+                    title: LocalizedStringResource("Conda package cache (\(root.lastPathComponent))",
+                                                   comment: "Row title. %@ is the Conda installation folder name (miniconda3, anaconda3…)."),
                     relPath: rel,
                     tag: .safe,
                     note: "Downloaded and unpacked conda packages. Equivalent to `conda clean --packages`. Environments keep working; the packages re-download only if you build a new environment."
@@ -950,7 +996,8 @@ enum Catalog {
             if exists(envs), let rel = relativeToHome(envs.path) {
                 out.append(Rule(
                     group: "Python",
-                    title: "Conda environments (\(root.lastPathComponent))",
+                    title: LocalizedStringResource("Conda environments (\(root.lastPathComponent))",
+                                                   comment: "Row title. %@ is the Conda installation folder name (miniconda3, anaconda3…)."),
                     relPath: rel,
                     tag: .review,
                     note: "One full environment per project. Rebuildable from an environment.yml if you have one — otherwise the exact package set is gone.",

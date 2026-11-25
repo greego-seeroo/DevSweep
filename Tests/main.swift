@@ -82,6 +82,13 @@ for path in ["/", "/etc", "/etc/passwd", "/usr/local/lib", "/Applications/Safari
 check(!SafetyGuard.isDeletable(h("../../etc/passwd")), "dot-dot traversal refused")
 check(!SafetyGuard.isDeletable(h("Library/Caches/../../.ssh")), "dot-dot through a cache refused")
 
+// Case tricks. The boot volume is case-insensitive, so these name the same
+// folders as the protected list does, just spelled differently.
+for path in ["library", "LIBRARY/Caches", "Library/keychains/login.keychain-db",
+             ".SSH/id_rsa", "library/containers/com.docker.docker", "documents"] {
+    check(!SafetyGuard.isDeletable(h(path)), "case variant refused: ~/\(path)")
+}
+
 section("Guard allows the legitimate")
 
 for path in ["Library/Caches/pip", "Library/Caches/Homebrew", ".cache/pip",
@@ -107,6 +114,19 @@ fixtureDir("links/real")
 try? fm.createSymbolicLink(at: internalLink,
                            withDestinationURL: fixtureRoot.appendingPathComponent("links/real"))
 check(SafetyGuard.isDeletable(internalLink), "symlink within home allowed")
+
+// A symlink that stays inside $HOME but lands on something protected is not —
+// trashing through it would move the target. Both the link itself and a path
+// that merely passes through it.
+let toLibrary = fixtureRoot.appendingPathComponent("links/lib")
+try? fm.createSymbolicLink(at: toLibrary, withDestinationURL: h("Library"))
+check(!SafetyGuard.isDeletable(toLibrary), "symlink to ~/Library refused")
+check(!SafetyGuard.isDeletable(toLibrary.appendingPathComponent("Keychains")),
+      "path through a symlink into ~/Library/Keychains refused")
+check(!SafetyGuard.isDeletable(toLibrary.appendingPathComponent("Caches")),
+      "path through a symlink onto a protected container refused")
+check(SafetyGuard.isDeletable(toLibrary.appendingPathComponent("Caches/pip")),
+      "path through a symlink onto a legitimate cache allowed")
 
 // MARK: - 2. The model: what a row offers for deletion
 
@@ -692,6 +712,94 @@ check(fm.fileExists(atPath: h("Documents").path), "~/Documents is untouched")
 let ghost = fixtureRoot.appendingPathComponent("never-existed")
 let ghostReport = Scanner.trash([ScanItem(title: "ghost", note: "", url: ghost, tag: .safe, bytes: 1)])
 check(ghostReport.moved == 0 && ghostReport.failures.isEmpty, "missing path is skipped silently")
+
+// MARK: - 6d. Localization: every string the UI can show has every language
+
+section("Localization catalog")
+
+// The catalogs are read from the repository (Scripts/test.sh runs from its
+// root). Each translatable key must carry all four languages, every
+// translation must keep the English placeholders, and keys whose number
+// varies must have plural forms. English falls back to the key itself.
+struct Catalog_ {
+    let name: String
+    let strings: [String: [String: Any]]
+}
+func loadCatalog(_ name: String) -> Catalog_? {
+    let url = URL(fileURLWithPath: "Resources/\(name).xcstrings")
+    guard let data = try? Data(contentsOf: url),
+          let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let strings = root["strings"] as? [String: [String: Any]]
+    else { return nil }
+    return Catalog_(name: name, strings: strings)
+}
+/// The format placeholders of a string, positions stripped, sorted.
+func placeholders(_ text: String) -> [String] {
+    let pattern = try! NSRegularExpression(pattern: "%(\\d+\\$)?(@|lld|ld|d|lu|llu|f|s)")
+    let range = NSRange(text.startIndex..., in: text)
+    return pattern.matches(in: text, range: range)
+        .map { String(text[Range($0.range(at: 2), in: text)!]) }
+        .sorted()
+}
+/// Every value a localization can resolve to (one for a plain string, several for variations).
+func values(of localization: [String: Any]) -> [String] {
+    if let unit = localization["stringUnit"] as? [String: Any], let value = unit["value"] as? String {
+        return [value]
+    }
+    if let variations = localization["variations"] as? [String: Any],
+       let plural = variations["plural"] as? [String: [String: Any]] {
+        return plural.values.flatMap { values(of: $0) }
+    }
+    return []
+}
+let languages = ["de", "ja", "fr", "es"]
+for name in ["Localizable", "InfoPlist"] {
+    guard let catalog = loadCatalog(name) else {
+        check(false, "\(name).xcstrings is readable from the repository root")
+        continue
+    }
+    var missing: [String: Int] = [:]
+    var badPlaceholders: [String] = []
+    var badPlurals: [String] = []
+    var stale = 0
+    var translatable = 0
+    for (key, entry) in catalog.strings {
+        if entry["extractionState"] as? String == "stale" { stale += 1; continue }
+        if entry["shouldTranslate"] as? Bool == false { continue }
+        translatable += 1
+        let localizations = entry["localizations"] as? [String: [String: Any]] ?? [:]
+        let english = localizations["en"].map(values(of:)) ?? [key]
+        let source = placeholders(english.first ?? key)
+        let isPlural = (localizations["en"]?["variations"] as? [String: Any])?["plural"] != nil
+        for language in languages {
+            guard let localization = localizations[language] else {
+                missing[language, default: 0] += 1
+                continue
+            }
+            for value in values(of: localization) where placeholders(value) != source {
+                badPlaceholders.append("\(language): \(key)")
+            }
+            if isPlural {
+                let plural = (localization["variations"] as? [String: Any])?["plural"] as? [String: Any]
+                let wanted = language == "ja" ? ["other"] : ["one", "other"]
+                if plural == nil || !wanted.allSatisfy({ plural?[$0] != nil }) { badPlurals.append("\(language): \(key)") }
+            }
+        }
+    }
+    check(translatable > 0, "\(name): \(translatable) translatable keys")
+    check(stale == 0, "\(name): no stale keys (\(stale))")
+    for language in languages {
+        check(missing[language] == nil, "\(name): every key has \(language) (\(missing[language] ?? 0) missing)")
+    }
+    check(badPlaceholders.isEmpty, "\(name): placeholders survive translation \(badPlaceholders.prefix(3))")
+    check(badPlurals.isEmpty, "\(name): count-based strings have plural forms \(badPlurals.prefix(3))")
+}
+
+// The safety vocabulary resolves to real words in the development language.
+check(SafetyTag.allCases.allSatisfy { !$0.label.isEmpty && !$0.headline.isEmpty && !$0.blurb.isEmpty },
+      "Safe / Review / Protected labels, headlines and blurbs resolve")
+check(Catalog.groupOrder.allSatisfy { !Catalog.groupDisplayName($0).isEmpty }, "every group has a display name")
+check(Catalog.groupDisplayName("Project artifacts") == "Project artifacts", "group display names fall back to the key")
 
 // MARK: - 7. Live checks (--live): this machine's real scan
 

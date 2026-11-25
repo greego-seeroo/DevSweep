@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 // MARK: - App Delegate
 
@@ -9,6 +10,22 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    /// Finishes a move before quitting. A "Move to Trash" or a Put Back is a
+    /// loop of filesystem moves on a background task; killing the process in
+    /// the middle leaves half the items moved and loses the record that Put
+    /// Back needs. So a quit asked for mid-move (Cmd-Q, or closing the window,
+    /// which quits) waits for the move to end, then goes ahead by itself.
+    private var quitWhenIdle: AnyCancellable?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model = ScanModel.current, model.cleaning else { return .terminateNow }
+        quitWhenIdle = model.$cleaning
+            .filter { !$0 }
+            .first()
+            .sink { _ in NSApp.reply(toApplicationShouldTerminate: true) }
+        return .terminateLater
     }
 
     /// Sizes the window on the very first launch, and only then.
@@ -57,7 +74,8 @@ struct DevSweepApp: App {
     @StateObject private var model = ScanModel()
 
     var body: some Scene {
-        WindowGroup("DevSweep") {
+        // The app name is not translated — verbatim keeps it out of the catalog.
+        WindowGroup(Text(verbatim: "DevSweep")) {
             ContentView()
                 .environmentObject(model)
         }
@@ -66,8 +84,10 @@ struct DevSweepApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .toolbar) {
-                Button("Rescan") { model.rescan() }
+                Button(action: model.rescan) { Text("Rescan", comment: "Menu item and header button: run the scan again.") }
                     .keyboardShortcut("r", modifiers: .command)
+                Divider()
+                LanguageMenu()
             }
         }
     }

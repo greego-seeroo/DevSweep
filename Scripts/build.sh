@@ -12,6 +12,7 @@ echo "› cleaning"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$RES"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/PrivacyInfo.xcprivacy "$RES/PrivacyInfo.xcprivacy"
 
 # Resources/Info.plist references $(MARKETING_VERSION)/$(CURRENT_PROJECT_VERSION) so the
 # version typed into Xcode is the single source of truth. Xcode substitutes
@@ -39,6 +40,15 @@ swiftc \
 
 echo "› icon"
 swift Scripts/makeicon.swift "$RES/AppIcon.icns" >/dev/null 2>&1 || echo "  (skipped)"
+
+# The String Catalogs are what Xcode compiles into <lang>.lproj on its own;
+# swiftc knows nothing about resources, so run the same compiler by hand.
+# Keys missing from a language fall back to the English in the source.
+echo "› localizations"
+for catalog in Resources/*.xcstrings; do
+  xcrun xcstringstool compile "$catalog" --output-directory "$RES"
+done
+echo "  $(ls -d "$RES"/*.lproj | xargs -n1 basename | sed 's/.lproj//' | tr '\n' ' ')"
 
 # macOS keys a privacy grant to the app's code signature. An ad-hoc signature gets
 # a fresh hash on every compile, so the system sees a brand new app each build and

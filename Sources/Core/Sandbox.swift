@@ -148,17 +148,20 @@ enum SandboxAccess {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = false
-        panel.prompt = "Grant Access"
+        panel.prompt = String(localized: "Grant Access",
+                              comment: "Button in the folder picker that grants DevSweep access to the selected folder. Quoted again in the picker message.")
 
         if preferHome {
             // Open in /Users so the home folder itself is a single click away —
             // selecting the *current* folder is easy to miss otherwise.
-            panel.title = "Add Your Home Folder"
-            panel.message = "Select the folder named “\(realHome.lastPathComponent)”, then click Grant Access. This lets DevSweep find every developer cache in one step."
+            panel.title = String(localized: "Add Your Home Folder", comment: "Folder picker window title.")
+            panel.message = String(localized: "Select the folder named “\(realHome.lastPathComponent)”, then click Grant Access. This lets DevSweep find every developer cache in one step.",
+                                   comment: "Folder picker message. %@ is the user's account folder name. 'Grant Access' must match the button title.")
             panel.directoryURL = realHome.deletingLastPathComponent()
         } else {
-            panel.title = "Choose a Folder to Scan"
-            panel.message = "Pick a folder for DevSweep to scan. Your Home folder covers every cache; you can also pick a single project or cache directory."
+            panel.title = String(localized: "Choose a Folder to Scan", comment: "Folder picker window title.")
+            panel.message = String(localized: "Pick a folder for DevSweep to scan. Your Home folder covers every cache; you can also pick a single project or cache directory.",
+                                   comment: "Folder picker message.")
             panel.directoryURL = realHome
         }
 

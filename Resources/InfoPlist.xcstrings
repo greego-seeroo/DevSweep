@@ -1,0 +1,212 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "NSDesktopFolderUsageDescription": {
+      "comment": "macOS permission prompt when DevSweep first reads the Desktop folder. Folder names in parentheses stay as they are.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep looks for regenerable build output (node_modules, target, build…) in projects you keep on your Desktop. It reads folder names and sizes only, and never opens your files."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep busca resultados de compilación regenerables (node_modules, target, build…) en los proyectos que guarda en su Escritorio. Solo lee nombres y tamaños de carpetas, y nunca abre sus archivos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep recherche des sorties de compilation régénérables (node_modules, target, build…) dans les projets que vous conservez sur votre Bureau. Il ne lit que les noms et les tailles des dossiers, et n’ouvre jamais vos fichiers."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweepは、デスクトップに保存されているプロジェクト内の再生成可能なビルド出力（node_modules、target、build…）を探します。フォルダ名とサイズのみを読み取り、ファイルを開くことは一切ありません。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep sucht in Projekten auf Ihrem Schreibtisch nach neu erzeugbaren Build-Ausgaben (node_modules, target, build…). Es liest nur Ordnernamen und -größen und öffnet nie Ihre Dateien."
+          }
+        }
+      }
+    },
+    "NSDocumentsFolderUsageDescription": {
+      "comment": "macOS permission prompt when DevSweep first reads the Documents folder. Folder names in parentheses stay as they are.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep looks for regenerable build output (node_modules, target, build…) in projects you keep in Documents. It reads folder names and sizes only, and never opens your files."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep busca resultados de compilación regenerables (node_modules, target, build…) en los proyectos que guarda en Documentos. Solo lee nombres y tamaños de carpetas, y nunca abre sus archivos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep recherche des sorties de compilation régénérables (node_modules, target, build…) dans les projets que vous conservez dans Documents. Il ne lit que les noms et les tailles des dossiers, et n’ouvre jamais vos fichiers."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweepは、書類フォルダに保存されているプロジェクト内の再生成可能なビルド出力（node_modules、target、build…）を探します。フォルダ名とサイズのみを読み取り、ファイルを開くことは一切ありません。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep sucht in Projekten in „Dokumente“ nach neu erzeugbaren Build-Ausgaben (node_modules, target, build…). Es liest nur Ordnernamen und -größen und öffnet nie Ihre Dateien."
+          }
+        }
+      }
+    },
+    "NSDownloadsFolderUsageDescription": {
+      "comment": "macOS permission prompt when DevSweep first reads the Downloads folder. Folder names in parentheses stay as they are.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep looks for regenerable build output (node_modules, target, build…) in projects you keep in Downloads. It reads folder names and sizes only, and never opens your files."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep busca resultados de compilación regenerables (node_modules, target, build…) en los proyectos que guarda en Descargas. Solo lee nombres y tamaños de carpetas, y nunca abre sus archivos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep recherche des sorties de compilation régénérables (node_modules, target, build…) dans les projets que vous conservez dans Téléchargements. Il ne lit que les noms et les tailles des dossiers, et n’ouvre jamais vos fichiers."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweepは、ダウンロードフォルダに保存されているプロジェクト内の再生成可能なビルド出力（node_modules、target、build…）を探します。フォルダ名とサイズのみを読み取り、ファイルを開くことは一切ありません。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep sucht in Projekten in „Downloads“ nach neu erzeugbaren Build-Ausgaben (node_modules, target, build…). Es liest nur Ordnernamen und -größen und öffnet nie Ihre Dateien."
+          }
+        }
+      }
+    },
+    "NSRemovableVolumesUsageDescription": {
+      "comment": "macOS permission prompt when DevSweep first reads an external drive.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep only needs this if you keep projects on an external drive. It reads folder names and sizes only."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep solo necesita este permiso si guarda proyectos en una unidad externa. Solo lee nombres y tamaños de carpetas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep n’a besoin de cette autorisation que si vous conservez des projets sur un disque externe. Il ne lit que les noms et les tailles des dossiers."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweepがこれを必要とするのは、外付けドライブにプロジェクトを保存している場合のみです。フォルダ名とサイズのみを読み取ります。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep benötigt dies nur, wenn Sie Projekte auf einem externen Laufwerk aufbewahren. Es liest nur Ordnernamen und -größen."
+          }
+        }
+      }
+    },
+    "NSHumanReadableCopyright": {
+      "comment": "Shown in the About window under the version.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No network access, no telemetry."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin acceso a la red, sin telemetría."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun accès réseau, aucune télémétrie."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネットワークアクセスなし、テレメトリなし。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Netzwerkzugriff, keine Telemetrie."
+          }
+        }
+      }
+    },
+    "CFBundleDisplayName": {
+      "comment": "The app name. Not translated.",
+      "extractionState": "manual",
+      "shouldTranslate": false,
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep"
+          }
+        }
+      }
+    },
+    "CFBundleName": {
+      "comment": "The app name. Not translated.",
+      "extractionState": "manual",
+      "shouldTranslate": false,
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DevSweep"
+          }
+        }
+      }
+    }
+  }
+}

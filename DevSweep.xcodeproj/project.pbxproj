@@ -6,9 +6,18 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D50000000000000000000014 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000012 /* Localizable.xcstrings */; };
+		D50000000000000000000015 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000013 /* InfoPlist.xcstrings */; };
+		D50000000000000000000017 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000016 /* PrivacyInfo.xcprivacy */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		D50000000000000000000004 /* DevSweep.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DevSweep.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D50000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Resources/Info.plist; sourceTree = "<group>"; };
+		D50000000000000000000012 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; name = Localizable.xcstrings; path = Resources/Localizable.xcstrings; sourceTree = "<group>"; };
+		D50000000000000000000013 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; name = InfoPlist.xcstrings; path = Resources/InfoPlist.xcstrings; sourceTree = "<group>"; };
+		D50000000000000000000016 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Resources/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -35,6 +44,9 @@
 			children = (
 				D50000000000000000000005 /* Sources */,
 				D50000000000000000000011 /* Info.plist */,
+				D50000000000000000000012 /* Localizable.xcstrings */,
+				D50000000000000000000013 /* InfoPlist.xcstrings */,
+				D50000000000000000000016 /* PrivacyInfo.xcprivacy */,
 				D50000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -88,6 +100,10 @@
 			knownRegions = (
 				en,
 				Base,
+				de,
+				ja,
+				fr,
+				es,
 			);
 			mainGroup = D50000000000000000000002;
 			minimizedProjectReferenceProxies = 1;
@@ -106,6 +122,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D50000000000000000000014 /* Localizable.xcstrings in Resources */,
+				D50000000000000000000015 /* InfoPlist.xcstrings in Resources */,
+				D50000000000000000000017 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -148,10 +167,12 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_TESTABILITY = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 			};
@@ -162,9 +183,11 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 			};
@@ -178,7 +201,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = RMG82888A2;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -190,7 +213,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.greego.devesweep;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -204,7 +227,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = RMG82888A2;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -216,7 +239,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.greego.devesweep;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};

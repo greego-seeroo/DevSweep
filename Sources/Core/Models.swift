@@ -7,27 +7,43 @@ enum SafetyTag: Int, Comparable, CaseIterable {
     case review = 1
     case never = 2
 
+    /// The one-word badge on every row and in the filter. Localized.
     var label: String {
         switch self {
-        case .safe: return "Safe"
-        case .review: return "Review"
-        case .never: return "Protected"
+        case .safe:
+            return String(localized: "Safe",
+                          comment: "Safety badge on a row: the item can be removed without loss. One short word; also a filter segment.")
+        case .review:
+            return String(localized: "Review",
+                          comment: "Safety badge on a row: read the note before removing. One short word; also a filter segment and referenced in the confirm sheet.")
+        case .never:
+            return String(localized: "Protected",
+                          comment: "Safety badge on a row: DevSweep never moves this. One short word; also a filter segment.")
         }
     }
 
     var headline: String {
         switch self {
-        case .safe: return "Safe to delete"
-        case .review: return "Read before deleting"
-        case .never: return "Protected"
+        case .safe:
+            return String(localized: "Safe to delete", comment: "Heading of the explainer shown when the Safe filter is active.")
+        case .review:
+            return String(localized: "Read before deleting", comment: "Heading of the explainer shown when the Review filter is active.")
+        case .never:
+            return String(localized: "Protected", comment: "Heading of the explainer shown when the Protected filter is active.")
         }
     }
 
     var blurb: String {
         switch self {
-        case .safe: return "Leftover files that your tools rebuild automatically. Deleting them costs you nothing but one slower build."
-        case .review: return "These come back too, but slowly — a big download or a long rebuild. Each row says what it costs. Read it before you tick."
-        case .never: return "Settings, credentials and the tools themselves. DevSweep will not touch these; they are shown so you can see they were considered."
+        case .safe:
+            return String(localized: "Leftover files that your tools rebuild automatically. Deleting them costs you nothing but one slower build.",
+                          comment: "Explainer under the Safe heading.")
+        case .review:
+            return String(localized: "These come back too, but slowly — a big download or a long rebuild. Each row says what it costs. Read it before you tick.",
+                          comment: "Explainer under the Review heading. 'Tick' means select the checkbox.")
+        case .never:
+            return String(localized: "Settings, credentials and the tools themselves. DevSweep will not touch these; they are shown so you can see they were considered.",
+                          comment: "Explainer under the Protected heading.")
         }
     }
 
@@ -187,11 +203,13 @@ enum ScanStatus {
     /// The scan status line. Once only a few directories are left it names
     /// them — a counter frozen at "152 of 153" explains nothing.
     static func measuring(done: Int, total: Int, waiting: [String]) -> String {
-        var line = "Measuring caches… \(done) of \(total)"
         if total - done <= 3, !waiting.isEmpty {
-            line += " · still measuring \(waiting.joined(separator: ", "))"
+            let names = waiting.formatted(.list(type: .and, width: .narrow))
+            return String(localized: "Measuring caches… \(done) of \(total) · still measuring \(names)",
+                          comment: "Scan status near the end. %1$lld directories measured of %2$lld; %3$@ is a list of the cache names still being measured.")
         }
-        return line
+        return String(localized: "Measuring caches… \(done) of \(total)",
+                      comment: "Scan status. %1$lld directories measured so far, %2$lld in total.")
     }
 }
 
@@ -356,29 +374,49 @@ enum SafetyGuard {
     ]
 
     static func isDeletable(_ url: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        let homePath = home.path
-
-        // Must live strictly inside the user's home directory.
-        guard path.hasPrefix(homePath + "/") else { return false }
-
-        let rel = String(path.dropFirst(homePath.count + 1))
-        guard !rel.isEmpty else { return false }
-
-        // No traversal tricks.
-        guard !rel.contains("..") else { return false }
-
-        if protectedExact.contains(rel) { return false }
-        for prefix in protectedPrefixes {
-            if rel == prefix || rel.hasPrefix(prefix + "/") { return false }
+        // The path as given must sit inside home and clear of everything protected.
+        guard let rel = homeRelative(url.standardizedFileURL.path), !isProtected(rel) else {
+            return false
         }
 
-        // Refuse to follow a symlink out of bounds.
+        // Then the same test on what the path *really* is. A symlink anywhere
+        // along it — `~/project/deps` pointing at `~/.ssh`, say — would make
+        // `trashItem` move the target, not the link, so the target has to pass
+        // the same checks: inside home, and not protected.
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
-        guard resolved.hasPrefix(homePath + "/") else { return false }
+        guard let resolvedRel = homeRelative(resolved), !isProtected(resolvedRel) else {
+            return false
+        }
 
         return true
     }
+
+    /// The path relative to home, or nil when it is not strictly inside home or
+    /// carries a traversal component.
+    private static func homeRelative(_ path: String) -> String? {
+        let homePath = home.path
+        guard path.hasPrefix(homePath + "/") else { return nil }
+        let rel = String(path.dropFirst(homePath.count + 1))
+        guard !rel.isEmpty, !rel.contains("..") else { return nil }
+        return rel
+    }
+
+    /// Whether a home-relative path is, or sits beneath, a protected location.
+    /// Compared case-insensitively: the boot volume is case-insensitive on
+    /// nearly every Mac, so `~/library/keychains` *is* `~/Library/Keychains`.
+    /// Refusing a same-named folder on a case-sensitive volume is the safe error.
+    private static func isProtected(_ rel: String) -> Bool {
+        let key = rel.lowercased()
+        if protectedExactLowercased.contains(key) { return true }
+        for prefix in protectedPrefixesLowercased
+        where key == prefix || key.hasPrefix(prefix + "/") {
+            return true
+        }
+        return false
+    }
+
+    private static let protectedExactLowercased = Set(protectedExact.map { $0.lowercased() })
+    private static let protectedPrefixesLowercased = protectedPrefixes.map { $0.lowercased() }
 }
 
 // MARK: - Auto mode

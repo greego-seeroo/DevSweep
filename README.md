@@ -22,6 +22,17 @@ thing it asks for is your Home folder; see *Folder access* below.
 
 ---
 
+## Languages
+
+DevSweep speaks English, German, Japanese, French and Spanish. It follows the
+Mac's language (or the per-app choice in System Settings ▸ General ▸ Language &
+Region); the Language button in the header (also View ▸ Language) switches it inside the app, which relaunches so every
+string is resolved in the new language — nothing is moved or deleted by that.
+Folder names, tool names and paths are deliberately never translated: a
+DerivedData folder is called DerivedData in every language. Strings live in
+`Resources/Localizable.xcstrings`; see `Scripts/extract-strings.sh` for how new
+ones get there.
+
 ## Folder access
 
 The App Store build is sandboxed, so it can read nothing until you grant it a
