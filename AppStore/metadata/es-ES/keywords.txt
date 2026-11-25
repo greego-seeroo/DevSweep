@@ -1,0 +1,1 @@
+caché,limpiador,disco,espacio,almacenamiento,limpieza,xcode,desarrollador,liberar,sistema

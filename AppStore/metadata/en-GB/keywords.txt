@@ -1,0 +1,1 @@
+cache cleaner,disk cleaner,storage,system data,xcode,derived data,developer,npm,cleanup,space

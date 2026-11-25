@@ -1,0 +1,48 @@
+DevSweep: el limpiador de cachés seguro para desarrolladores
+
+Cada proyecto que compilas deja un rastro. Cachés, artefactos de compilación, dependencias descargadas: el serrín del desarrollo de software. Es invisible, es inofensivo y, con los meses, se traga en silencio decenas de gigabytes de tu disco.
+
+DevSweep es la escoba.
+
+Conoce decenas de herramientas de desarrollo y encuentra el espacio que han escondido en rincones de tu carpeta de inicio que nunca abres; luego te pone en la mano el botón para recuperarlo.
+
+ENCUENTRA LO QUE LOS DESARROLLADORES DEJAN ATRÁS DE VERDAD
+• DerivedData, archivos y ficheros de soporte de dispositivos de Xcode
+• Cachés de npm, Yarn, pnpm y Bun
+• Cachés de Gradle, Maven y CocoaPods
+• Carpetas target de Rust, caché de módulos de Go, virtualenvs de Python
+• node_modules, build, dist y otras salidas de proyecto regenerables
+• … y decenas más, en las herramientas que ya usas
+
+TAMBIÉN LIMPIA LOS «DATOS DEL SISTEMA» DE MACOS
+¿No eres desarrollador? Cambia al modo Datos del sistema para ver lo que macOS agrupa como «Datos del sistema» en los ajustes de almacenamiento: cachés de apps, registros de apps y copias de seguridad antiguas de iPhone y iPad, cada una explicada con palabras sencillas.
+
+SEGURO POR DISEÑO
+DevSweep nunca borra. Todo lo que limpia va a la Papelera, así que siempre puedes recuperarlo si cambias de idea.
+
+Cada elemento está claramente etiquetado:
+• Seguro: se regenera automáticamente; límpialo sin miedo
+• Revisar: también vuelve, pero despacio (una descarga grande o una recompilación larga); léelo antes de marcar
+• Protegido: tus claves, credenciales, ajustes y las propias herramientas; se muestran para que veas que se han tenido en cuenta, pero nunca se tocan
+
+Un guardián de seguridad independiente vuelve a comprobar cada ruta antes de que nada se mueva. Tus claves SSH, credenciales de la nube y datos de apps quedan fuera de su alcance por diseño.
+
+SIEMPRE TIENES EL CONTROL
+• Ve el tamaño y la seguridad de cada elemento antes de decidir
+• Marca exactamente lo que quieres que desaparezca; nada es automático
+• Busca y filtra para encontrar cachés rápido
+• Observa cómo se actualiza el espacio recuperable mientras seleccionas
+
+PRIVADO Y SIN CONEXIÓN
+Sin acceso a la red. Sin telemetría. Sin cuenta. DevSweep funciona por completo en tu Mac y solo mira las carpetas que le permites expresamente. Lo que pasa en tu disco se queda en tu disco.
+
+EN TU IDIOMA
+Español, inglés, alemán, japonés y francés: sigue el idioma de tu Mac o elígelo dentro de la app.
+
+EMPIEZA EN SEGUNDOS
+
+1. Permite el acceso a tu carpeta de inicio para que DevSweep encuentre tus cachés
+2. Revisa lo que ha encontrado y marca lo que quieres limpiar
+3. Trasládalo a la Papelera y recupera el espacio
+
+Recupera tu disco. Conserva tu trabajo. Limpia con confianza.

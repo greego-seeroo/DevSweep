@@ -1,0 +1,1 @@
+cache,cleaner,speicher,festplatte,aufräumen,systemdaten,xcode,entwickler,platz,backup

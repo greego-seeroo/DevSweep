@@ -1,0 +1,7 @@
+What's New in DevSweep 1.4
+
+Now in five languages. DevSweep speaks English, German, Japanese, French and Spanish. It follows your Mac's language, and a new Language button in the header lets you pick one yourself — the app relaunches, nothing is moved or deleted, and your last scan is kept. First launch starts with the language choice.
+
+Room to grow. The header rearranges itself for longer languages and larger text sizes instead of cutting labels off.
+
+Under the hood: every piece of text the app shows now comes from one String Catalog, counts use proper plurals, and sizes, numbers and dates follow your region's format.

@@ -1,0 +1,7 @@
+Novedades de DevSweep 1.4
+
+Ahora en cinco idiomas. DevSweep habla español, inglés, alemán, japonés y francés. Sigue el idioma de tu Mac, y un nuevo botón Idioma en la cabecera te deja elegir uno tú mismo: la app se reabre, no se mueve ni se borra nada y tu último análisis se conserva. El primer arranque empieza por la elección del idioma.
+
+Sitio para crecer. La cabecera se reorganiza con idiomas más largos y tamaños de texto grandes en lugar de cortar las etiquetas.
+
+Por dentro: todo el texto que muestra la app sale ahora de un único catálogo de cadenas, los recuentos usan plurales de verdad y los tamaños, números y fechas siguen el formato de tu región.

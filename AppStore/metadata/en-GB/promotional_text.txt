@@ -1,0 +1,1 @@
+Mac says "System Data" is full? DevSweep shows the app caches, logs and old iPhone backups behind it, in plain language, and clears them safely.

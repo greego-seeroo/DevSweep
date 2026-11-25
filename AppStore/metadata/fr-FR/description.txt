@@ -1,0 +1,48 @@
+DevSweep – le nettoyeur de caches sûr pour développeurs
+
+Chaque projet que vous compilez laisse une trace. Caches, artefacts de build, dépendances téléchargées – la sciure du développement logiciel. C’est invisible, c’est inoffensif, et au fil des mois cela avale discrètement des dizaines de gigaoctets de votre disque.
+
+DevSweep est le balai.
+
+Il connaît des dizaines d’outils de développement et retrouve l’espace qu’ils ont glissé dans des recoins de votre dossier de départ que vous n’ouvrez jamais – puis vous tend le bouton pour le récupérer.
+
+TROUVE CE QUE LES DÉVELOPPEURS LAISSENT VRAIMENT DERRIÈRE EUX
+• DerivedData, archives et fichiers de prise en charge des appareils de Xcode
+• Caches npm, Yarn, pnpm et Bun
+• Caches Gradle, Maven et CocoaPods
+• Dossiers target de Rust, cache des modules Go, virtualenvs Python
+• node_modules, build, dist et autres sorties de projet régénérables
+• … et des dizaines d’autres, dans les outils que vous utilisez déjà
+
+VIDE AUSSI LES « DONNÉES SYSTÈME » DE MACOS
+Pas développeur ? Passez en mode Données système pour voir ce que macOS range sous « Données système » dans les réglages de stockage : caches d’apps, journaux d’apps et anciennes sauvegardes d’iPhone et d’iPad – chacun expliqué en termes simples.
+
+SÛR PAR CONCEPTION
+DevSweep ne supprime jamais. Tout ce qu’il nettoie va dans la Corbeille : vous pouvez toujours le récupérer si vous changez d’avis.
+
+Chaque élément est clairement étiqueté :
+• Sûr – se reconstruit automatiquement ; nettoyez sans hésiter
+• À vérifier – revient aussi, mais lentement (un gros téléchargement ou une longue recompilation) ; lisez avant de cocher
+• Protégé – vos clés, identifiants, réglages et les outils eux-mêmes ; affichés pour que vous sachiez qu’ils ont été pris en compte, mais jamais touchés
+
+Un garde-fou indépendant revérifie chaque chemin avant que quoi que ce soit ne bouge. Vos clés SSH, identifiants cloud et données d’apps sont hors d’atteinte par conception.
+
+VOUS GARDEZ LE CONTRÔLE
+• Voyez la taille et le niveau de sécurité de chaque élément avant de décider
+• Cochez exactement ce que vous voulez voir partir – rien n’est automatique
+• Cherchez et filtrez pour trouver les caches rapidement
+• Regardez l’espace récupérable se mettre à jour au fil de votre sélection
+
+PRIVÉ ET HORS LIGNE
+Aucun accès réseau. Aucune télémétrie. Aucun compte. DevSweep tourne entièrement sur votre Mac et ne regarde que les dossiers que vous lui autorisez explicitement. Ce qui se passe sur votre disque reste sur votre disque.
+
+DANS VOTRE LANGUE
+Français, anglais, allemand, japonais et espagnol – suit la langue de votre Mac ou se choisit dans l’app.
+
+PRÊT EN QUELQUES SECONDES
+
+1. Autorisez votre dossier de départ pour que DevSweep trouve vos caches
+2. Passez en revue ce qu’il a trouvé et cochez ce que vous voulez nettoyer
+3. Placez-le dans la Corbeille et récupérez l’espace
+
+Récupérez votre disque. Gardez votre travail. Nettoyez en confiance.

@@ -1,0 +1,48 @@
+DevSweep — Safe Developer Cache Cleaner
+
+Every project you build leaves a trail. Caches, build artifacts, downloaded dependencies — the sawdust of software development. It's invisible, it's harmless, and over the months it quietly swallows tens of gigabytes of your disk.
+
+DevSweep is the broom.
+
+It understands dozens of developer tools and finds the space they've tucked into corners of your home folder you never open — then hands you the reclaim button.
+
+FINDS WHAT DEVELOPERS ACTUALLY LEAVE BEHIND
+• Xcode DerivedData, archives, and device support files
+• npm, Yarn, pnpm, and Bun caches
+• Gradle, Maven, and CocoaPods caches
+• Rust target folders, Go module cache, Python virtualenvs
+• node_modules, build, dist, and other regenerable project output
+• …and dozens more, across the tools you already use
+
+ALSO CLEARS MACOS "SYSTEM DATA"
+Not a developer? Switch to System Data mode for the space macOS lumps under System Data in Storage settings: app caches, app logs and old iPhone and iPad backups — each explained in plain language.
+
+SAFE BY DESIGN
+DevSweep never deletes. Everything it clears goes to the Trash, so you can always pull it back if you change your mind.
+
+Every item is clearly labelled:
+• Safe — rebuilds automatically; clear it freely
+• Review — comes back too, but slowly (a big download or long rebuild); read before you tick
+• Protected — your keys, credentials, settings, and the tools themselves; shown so you can see they were considered, but never touched
+
+A separate safety guard independently double-checks every path before anything moves. Your SSH keys, cloud credentials, and app data are off-limits by design.
+
+YOU'RE ALWAYS IN CONTROL
+• See the size and safety of every item before you decide
+• Tick exactly what you want gone — nothing is automatic
+• Search and filter to find caches fast
+• Watch your reclaimable space update as you select
+
+PRIVATE AND OFFLINE
+No network access. No telemetry. No account. DevSweep runs entirely on your Mac and only looks at the folders you explicitly grant it. What happens on your disk stays on your disk.
+
+IN YOUR LANGUAGE
+English, German, Japanese, French and Spanish — follow your Mac's language or pick one inside the app.
+
+GET STARTED IN SECONDS
+
+1. Grant your Home folder so DevSweep can find your caches
+2. Review what it found and tick what you want to clear
+3. Move it to the Trash and reclaim the space
+
+Reclaim your disk. Keep your work. Sweep with confidence.

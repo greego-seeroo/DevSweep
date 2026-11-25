@@ -1,0 +1,1 @@
+cache,nettoyeur,disque,espace,stockage,nettoyage,xcode,développeur,libérer,données système

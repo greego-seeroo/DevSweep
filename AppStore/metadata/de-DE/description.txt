@@ -1,0 +1,48 @@
+DevSweep – der sichere Cache-Cleaner für Entwickler
+
+Jedes Projekt, das Sie bauen, hinterlässt Spuren. Caches, Build-Artefakte, geladene Abhängigkeiten – die Sägespäne der Softwareentwicklung. Sie sind unsichtbar, sie sind harmlos, und über die Monate verschlingen sie still und leise Dutzende Gigabyte Ihrer Festplatte.
+
+DevSweep ist der Besen.
+
+Es kennt Dutzende Entwicklerwerkzeuge und findet den Platz, den sie in Ecken Ihres Benutzerordners versteckt haben, die Sie nie öffnen – und gibt Ihnen die Taste zum Freigeben in die Hand.
+
+FINDET, WAS ENTWICKLER WIRKLICH ZURÜCKLASSEN
+• Xcode DerivedData, Archive und Device-Support-Dateien
+• Caches von npm, Yarn, pnpm und Bun
+• Caches von Gradle, Maven und CocoaPods
+• Rust-target-Ordner, Go-Modul-Cache, Python-Virtualenvs
+• node_modules, build, dist und andere wiederherstellbare Projektausgaben
+• … und Dutzende mehr, quer durch die Werkzeuge, die Sie ohnehin nutzen
+
+AUCH FÜR „SYSTEMDATEN“
+Kein Entwickler? Im Modus „Systemdaten“ zeigt DevSweep, was macOS in den Speichereinstellungen unter Systemdaten zusammenfasst: App-Caches, App-Protokolle und alte iPhone- und iPad-Backups – jeweils in verständlichen Worten erklärt.
+
+SICHER VON GRUND AUF
+DevSweep löscht nie. Alles, was es aufräumt, landet im Papierkorb – Sie können es jederzeit zurückholen, wenn Sie es sich anders überlegen.
+
+Jedes Objekt ist eindeutig markiert:
+• Sicher – wird automatisch neu erstellt; bedenkenlos aufräumen
+• Prüfen – kommt auch zurück, aber langsam (ein großer Download oder ein langer Rebuild); vor dem Anhaken lesen
+• Geschützt – Ihre Schlüssel, Zugangsdaten, Einstellungen und die Werkzeuge selbst; werden angezeigt, damit Sie sehen, dass sie berücksichtigt wurden, aber nie angetastet
+
+Eine unabhängige Schutzprüfung kontrolliert jeden Pfad ein zweites Mal, bevor sich etwas bewegt. SSH-Schlüssel, Cloud-Zugangsdaten und App-Daten sind von vornherein tabu.
+
+SIE BEHALTEN DIE KONTROLLE
+• Größe und Sicherheitsstufe jedes Objekts sehen, bevor Sie entscheiden
+• Genau das anhaken, was weg soll – nichts passiert automatisch
+• Suchen und filtern, um Caches schnell zu finden
+• Zusehen, wie sich der freigebbare Platz beim Auswählen aktualisiert
+
+PRIVAT UND OFFLINE
+Kein Netzwerkzugriff. Keine Telemetrie. Kein Konto. DevSweep läuft vollständig auf Ihrem Mac und sieht nur in die Ordner, die Sie ausdrücklich freigeben. Was auf Ihrer Festplatte passiert, bleibt auf Ihrer Festplatte.
+
+IN IHRER SPRACHE
+Deutsch, Englisch, Japanisch, Französisch und Spanisch – folgt der Sprache Ihres Mac oder lässt sich direkt in der App wählen.
+
+IN SEKUNDEN STARTKLAR
+
+1. Benutzerordner freigeben, damit DevSweep Ihre Caches findet
+2. Fundstücke durchsehen und anhaken, was weg soll
+3. In den Papierkorb legen und den Platz zurückgewinnen
+
+Festplatte zurückgewinnen. Arbeit behalten. Mit gutem Gefühl aufräumen.
